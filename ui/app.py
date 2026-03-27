@@ -83,7 +83,6 @@ _CONTROLLER_THREAD = None
 _GPS_READER_THREAD = None
 _SCAN_LOOP_THREAD = None
 APP_STARTED_MONOTONIC = time.monotonic()
-_EINK_DAEMON_STARTED = False
 
 
 def _utcnow():
@@ -471,7 +470,10 @@ def _ensure_runtime_controller_started():
         _CONTROLLER_THREAD.start()
     _ensure_gps_reader_started()
     _ensure_scan_loop_started()
-    _ensure_eink_daemon_started()
+
+
+def _start_runtime_services_on_process_start():
+    _ensure_runtime_controller_started()
 
 
 def _split_tags(tags):
@@ -718,47 +720,6 @@ def _build_threat_summary():
         "new_baseline_count": new_baseline_count,
         "high_risk_count": high_risk_count,
     }
-
-
-def _build_eink_snapshot():
-    with RUNTIME_LOCK:
-        runtime_state = dict(RUNTIME_STATE)
-
-    now = datetime.now()
-    gps_locked = bool(runtime_state.get("gps_connected") and runtime_state.get("gps_last_fix_ts"))
-    summary = _build_threat_summary()
-
-    return {
-        "local_time": now.strftime("%H:%M:%S"),
-        "local_date": now.strftime("%Y-%m-%d"),
-        "uptime": _format_elapsed_compact(time.monotonic() - APP_STARTED_MONOTONIC),
-        "scanning_enabled": runtime_state.get("scanning_enabled", False),
-        "turbo_enabled": runtime_state.get("turbo_enabled", False),
-        "gps_lock": gps_locked,
-        "cpu_percent": _cpu_usage_percent(),
-        "ram_percent": _memory_usage_percent(),
-        "disk_percent": _disk_usage_percent("/"),
-        "last_wifi_scan": _format_since(runtime_state.get("last_wifi_scan_ts")),
-        "last_ble_scan": _format_since(runtime_state.get("last_ble_scan_ts")),
-        "wifi_devices": summary["wifi_devices"],
-        "ble_devices": summary["ble_devices"],
-        "new_baseline_count": summary["new_baseline_count"],
-        "high_risk_count": summary["high_risk_count"],
-    }
-
-
-def _ensure_eink_daemon_started():
-    global _EINK_DAEMON_STARTED
-    if _EINK_DAEMON_STARTED:
-        return
-    try:
-        from eink.daemon import start_daemon
-
-        start_daemon(_build_eink_snapshot)
-        _EINK_DAEMON_STARTED = True
-    except Exception as e:
-        app.logger.exception("Failed to start e-ink daemon: %s", e)
-        _EINK_DAEMON_STARTED = True
 
 
 @app.route("/")
@@ -1041,6 +1002,9 @@ def capture_baseline():
     _ensure_runtime_controller_started()
     create_baseline()
     return redirect(url_for("index", filter=request.args.get("filter", "all")))
+
+
+_start_runtime_services_on_process_start()
 
 
 if __name__ == "__main__":

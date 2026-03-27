@@ -1,0 +1,16 @@
+[Unit]
+Description=Wraith e-ink display runner
+After=network.target
+
+[Service]
+Type=simple
+User=wraith
+WorkingDirectory=/home/wraith/rf-detector
+Environment=PYTHONPATH=.
+Environment=GPIOZERO_PIN_FACTORY=lgpio
+ExecStart=/home/wraith/rf-detector/venv/bin/python -m eink.run
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
