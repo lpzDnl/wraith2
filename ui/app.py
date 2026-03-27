@@ -31,7 +31,11 @@ from scanners.wifi import parse_iw_scan, run_wifi_scan
 app = Flask(__name__)
 
 VALID_FILTERS = {"all", "high", "new", "approaching"}
-RECENT_OBSERVATION_LIMIT = 20
+RECENT_OBSERVATION_LIMIT = 12
+NORMAL_WIFI_SCAN_INTERVAL_SEC = 15
+NORMAL_BLE_SCAN_INTERVAL_SEC = 10
+TURBO_WIFI_SCAN_INTERVAL_SEC = 5
+TURBO_BLE_SCAN_INTERVAL_SEC = 3
 LAST_GPS = {
     "lat": None,
     "lon": None,
@@ -64,9 +68,19 @@ RUNTIME_STATE = {
     "last_error": None,
     "operator_message": "Phone UI connected. Wraith is running normally.",
     "workflow_id": 0,
+    "scanning_enabled": True,
+    "turbo_enabled": False,
+    "wifi_scan_interval_sec": NORMAL_WIFI_SCAN_INTERVAL_SEC,
+    "ble_scan_interval_sec": NORMAL_BLE_SCAN_INTERVAL_SEC,
+    "last_wifi_scan_ts": None,
+    "last_ble_scan_ts": None,
+    "wifi_scan_running": False,
+    "ble_scan_running": False,
+    "scan_loop_error": None,
 }
 _CONTROLLER_THREAD = None
 _GPS_READER_THREAD = None
+_SCAN_LOOP_THREAD = None
 
 
 def _utcnow():
@@ -140,6 +154,15 @@ def _set_mode_locked(mode, message):
     RUNTIME_STATE["mode"] = mode
     RUNTIME_STATE["operator_message"] = message
     RUNTIME_STATE["last_transition_ts"] = _utcnow()
+
+
+def _update_scan_intervals_locked():
+    if RUNTIME_STATE["turbo_enabled"]:
+        RUNTIME_STATE["wifi_scan_interval_sec"] = TURBO_WIFI_SCAN_INTERVAL_SEC
+        RUNTIME_STATE["ble_scan_interval_sec"] = TURBO_BLE_SCAN_INTERVAL_SEC
+    else:
+        RUNTIME_STATE["wifi_scan_interval_sec"] = NORMAL_WIFI_SCAN_INTERVAL_SEC
+        RUNTIME_STATE["ble_scan_interval_sec"] = NORMAL_BLE_SCAN_INTERVAL_SEC
 
 
 def _start_workflow_locked(requested_mode, mode, message, phone_ui_expected, gps_expected):
@@ -444,6 +467,7 @@ def _ensure_runtime_controller_started():
     if should_start_controller:
         _CONTROLLER_THREAD.start()
     _ensure_gps_reader_started()
+    _ensure_scan_loop_started()
 
 
 def _split_tags(tags):
@@ -483,6 +507,121 @@ def _gps_snapshot():
         if "accuracy" in LAST_GPS:
             snapshot["accuracy"] = LAST_GPS["accuracy"]
         return snapshot
+
+
+def _seconds_since(timestamp):
+    if not timestamp:
+        return None
+    try:
+        delta = datetime.utcnow() - datetime.fromisoformat(timestamp)
+    except ValueError:
+        return None
+    return max(delta.total_seconds(), 0.0)
+
+
+def _run_wifi_scan_once():
+    with RUNTIME_LOCK:
+        if RUNTIME_STATE["wifi_scan_running"]:
+            return False, "Wi-Fi scan already running"
+        RUNTIME_STATE["wifi_scan_running"] = True
+
+    interface = os.environ.get("WRAITH_WIFI_IFACE", "wlan1")
+    try:
+        output = run_wifi_scan(interface)
+        parsed = parse_iw_scan(output)
+        for item in parsed:
+            wifi_item = dict(item)
+            wifi_item["gps"] = _gps_snapshot()
+            log_wifi(interface, wifi_item)
+        with RUNTIME_LOCK:
+            RUNTIME_STATE["last_wifi_scan_ts"] = _utcnow()
+            RUNTIME_STATE["scan_loop_error"] = None
+        return True, None
+    except subprocess.CalledProcessError as e:
+        message = f"Wi-Fi scan failed: {e}"
+        with RUNTIME_LOCK:
+            RUNTIME_STATE["last_wifi_scan_ts"] = _utcnow()
+            RUNTIME_STATE["scan_loop_error"] = message
+        return False, message
+    except Exception as e:
+        message = f"Wi-Fi scan failed: {e}"
+        with RUNTIME_LOCK:
+            RUNTIME_STATE["last_wifi_scan_ts"] = _utcnow()
+            RUNTIME_STATE["scan_loop_error"] = message
+        return False, message
+    finally:
+        with RUNTIME_LOCK:
+            RUNTIME_STATE["wifi_scan_running"] = False
+
+
+def _run_ble_scan_once():
+    with RUNTIME_LOCK:
+        if RUNTIME_STATE["ble_scan_running"]:
+            return False, "BLE scan already running"
+        RUNTIME_STATE["ble_scan_running"] = True
+
+    try:
+        try:
+            output = run_ble_scan()
+        except subprocess.CalledProcessError as e:
+            output = e.output
+        found = parse_ble_scan(output)
+        for addr, info in found.items():
+            log_ble(addr, info["name"], info["rssi"], gps=_gps_snapshot())
+        with RUNTIME_LOCK:
+            RUNTIME_STATE["last_ble_scan_ts"] = _utcnow()
+            RUNTIME_STATE["scan_loop_error"] = None
+        return True, None
+    except Exception as e:
+        message = f"BLE scan failed: {e}"
+        with RUNTIME_LOCK:
+            RUNTIME_STATE["last_ble_scan_ts"] = _utcnow()
+            RUNTIME_STATE["scan_loop_error"] = message
+        return False, message
+    finally:
+        with RUNTIME_LOCK:
+            RUNTIME_STATE["ble_scan_running"] = False
+
+
+def _scan_loop():
+    while True:
+        try:
+            should_run_wifi = False
+            should_run_ble = False
+            with RUNTIME_LOCK:
+                scanning_enabled = RUNTIME_STATE["scanning_enabled"]
+                wifi_interval = RUNTIME_STATE["wifi_scan_interval_sec"]
+                ble_interval = RUNTIME_STATE["ble_scan_interval_sec"]
+                wifi_running = RUNTIME_STATE["wifi_scan_running"]
+                ble_running = RUNTIME_STATE["ble_scan_running"]
+                last_wifi_scan_ts = RUNTIME_STATE["last_wifi_scan_ts"]
+                last_ble_scan_ts = RUNTIME_STATE["last_ble_scan_ts"]
+
+            if scanning_enabled:
+                wifi_elapsed = _seconds_since(last_wifi_scan_ts)
+                ble_elapsed = _seconds_since(last_ble_scan_ts)
+                should_run_wifi = not wifi_running and (wifi_elapsed is None or wifi_elapsed >= wifi_interval)
+                should_run_ble = not ble_running and (ble_elapsed is None or ble_elapsed >= ble_interval)
+
+            if should_run_wifi:
+                _run_wifi_scan_once()
+            if should_run_ble:
+                _run_ble_scan_once()
+        except Exception as e:
+            with RUNTIME_LOCK:
+                RUNTIME_STATE["scan_loop_error"] = f"Scan loop error: {e}"
+        time.sleep(1)
+
+
+def _ensure_scan_loop_started():
+    global _SCAN_LOOP_THREAD
+    should_start_scan_loop = False
+    with RUNTIME_LOCK:
+        if _SCAN_LOOP_THREAD is None or not _SCAN_LOOP_THREAD.is_alive():
+            _SCAN_LOOP_THREAD = threading.Thread(target=_scan_loop, name="wraith-scan-loop", daemon=True)
+            should_start_scan_loop = True
+    if should_start_scan_loop:
+        _SCAN_LOOP_THREAD.start()
 
 
 @app.route("/")
@@ -676,6 +815,32 @@ def status():
     return jsonify(snapshot)
 
 
+@app.route("/start_scanning", methods=["POST"])
+def start_scanning():
+    _ensure_runtime_controller_started()
+    with RUNTIME_LOCK:
+        RUNTIME_STATE["scanning_enabled"] = True
+        _update_scan_intervals_locked()
+    return _render_prepare_response()
+
+
+@app.route("/stop_scanning", methods=["POST"])
+def stop_scanning():
+    _ensure_runtime_controller_started()
+    with RUNTIME_LOCK:
+        RUNTIME_STATE["scanning_enabled"] = False
+    return _render_prepare_response()
+
+
+@app.route("/toggle_turbo", methods=["POST"])
+def toggle_turbo():
+    _ensure_runtime_controller_started()
+    with RUNTIME_LOCK:
+        RUNTIME_STATE["turbo_enabled"] = not RUNTIME_STATE["turbo_enabled"]
+        _update_scan_intervals_locked()
+    return _render_prepare_response()
+
+
 @app.route("/prepare_mobile", methods=["POST"])
 def prepare_mobile():
     _ensure_runtime_controller_started()
@@ -717,19 +882,9 @@ def start_return():
 @app.route("/scan_wifi")
 def scan_wifi():
     _ensure_runtime_controller_started()
-    interface = os.environ.get("WRAITH_WIFI_IFACE", "wlan1")
-    try:
-        output = run_wifi_scan(interface)
-    except subprocess.CalledProcessError as e:
-        return f"<pre>Wi-Fi scan failed:\n{e.output}</pre>", 500
-    except Exception as e:
-        return f"<pre>Wi-Fi scan failed:\n{e}</pre>", 500
-
-    parsed = parse_iw_scan(output)
-    for item in parsed:
-        wifi_item = dict(item)
-        wifi_item["gps"] = _gps_snapshot()
-        log_wifi(interface, wifi_item)
+    ok, error = _run_wifi_scan_once()
+    if not ok:
+        return f"<pre>{error}</pre>", 500
 
     return redirect(url_for("index", filter=request.args.get("filter", "all")))
 
@@ -737,16 +892,9 @@ def scan_wifi():
 @app.route("/scan_ble")
 def scan_ble():
     _ensure_runtime_controller_started()
-    try:
-        output = run_ble_scan()
-    except subprocess.CalledProcessError as e:
-        output = e.output
-    except Exception as e:
-        return f"<pre>BLE scan failed:\n{e}</pre>", 500
-
-    found = parse_ble_scan(output)
-    for addr, info in found.items():
-        log_ble(addr, info["name"], info["rssi"], gps=_gps_snapshot())
+    ok, error = _run_ble_scan_once()
+    if not ok:
+        return f"<pre>{error}</pre>", 500
 
     return redirect(url_for("index", filter=request.args.get("filter", "all")))
 

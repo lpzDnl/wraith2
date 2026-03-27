@@ -58,7 +58,25 @@
         <div><b>Message:</b> <span id="runtime-message">{{ runtime_state.operator_message }}</span></div>
         <div><b>GPS Device:</b> <span id="runtime-gps-device">{{ runtime_state.gps_device }}</span></div>
         <div><b>GPS Connected:</b> <span id="runtime-gps-connected">{{ "yes" if runtime_state.gps_connected else "no" }}</span></div>
+        <div><b>Scanning:</b> <span id="runtime-scanning-enabled">{{ "enabled" if runtime_state.scanning_enabled else "disabled" }}</span></div>
+        <div><b>Turbo:</b> <span id="runtime-turbo-enabled">{{ "on" if runtime_state.turbo_enabled else "off" }}</span></div>
+        <div><b>Wi-Fi Interval:</b> <span id="runtime-wifi-interval">{{ runtime_state.wifi_scan_interval_sec }}</span>s</div>
+        <div><b>BLE Interval:</b> <span id="runtime-ble-interval">{{ runtime_state.ble_scan_interval_sec }}</span>s</div>
+        <div><b>Last Wi-Fi Scan:</b> <span id="runtime-last-wifi-scan">{{ runtime_state.last_wifi_scan_ts or "" }}</span></div>
+        <div><b>Last BLE Scan:</b> <span id="runtime-last-ble-scan">{{ runtime_state.last_ble_scan_ts or "" }}</span></div>
+        <div><b>Wi-Fi Scan Running:</b> <span id="runtime-wifi-running">{{ "yes" if runtime_state.wifi_scan_running else "no" }}</span></div>
+        <div><b>BLE Scan Running:</b> <span id="runtime-ble-running">{{ "yes" if runtime_state.ble_scan_running else "no" }}</span></div>
+        <div><b>Scan Loop Error:</b> <span id="runtime-scan-loop-error">{{ runtime_state.scan_loop_error or "" }}</span></div>
         <div class="runtime-actions">
+            <form method="post" action="{{ url_for('start_scanning', filter=active_filter) }}">
+                <button class="button" type="submit">Start Scanning</button>
+            </form>
+            <form method="post" action="{{ url_for('stop_scanning', filter=active_filter) }}">
+                <button class="button" type="submit">Stop Scanning</button>
+            </form>
+            <form method="post" action="{{ url_for('toggle_turbo', filter=active_filter) }}">
+                <button class="button" type="submit">Turbo {{ "OFF" if runtime_state.turbo_enabled else "ON" }}</button>
+            </form>
             {% if "prepare_mobile" in runtime_state.allowed_actions %}
             <form method="post" action="{{ url_for('prepare_mobile', filter=active_filter) }}">
                 <button class="button" type="submit">Prepare Mobile</button>
@@ -72,8 +90,6 @@
         </div>
     </div>
 
-    <a class="button" href="{{ url_for('scan_wifi', filter=active_filter) }}">Run Wi-Fi Scan</a>
-    <a class="button" href="{{ url_for('scan_ble', filter=active_filter) }}">Run BLE Scan</a>
     <a class="button" href="{{ url_for('capture_baseline', filter=active_filter) }}">Capture Baseline</a>
 
     <div class="filters">
@@ -229,6 +245,7 @@
             try {
                 const response = await fetch("{{ url_for('status') }}", {cache: "no-store"});
                 if (!response.ok) {
+                    window.setTimeout(pollStatus, 2000);
                     return;
                 }
                 const state = await response.json();
@@ -236,20 +253,24 @@
                 document.getElementById("runtime-message").textContent = state.operator_message;
                 document.getElementById("runtime-gps-device").textContent = state.gps_device;
                 document.getElementById("runtime-gps-connected").textContent = state.gps_connected ? "yes" : "no";
-
-                if (!transitionModes.has(state.mode)) {
-                    return;
-                }
+                document.getElementById("runtime-scanning-enabled").textContent = state.scanning_enabled ? "enabled" : "disabled";
+                document.getElementById("runtime-turbo-enabled").textContent = state.turbo_enabled ? "on" : "off";
+                document.getElementById("runtime-wifi-interval").textContent = state.wifi_scan_interval_sec;
+                document.getElementById("runtime-ble-interval").textContent = state.ble_scan_interval_sec;
+                document.getElementById("runtime-last-wifi-scan").textContent = state.last_wifi_scan_ts || "";
+                document.getElementById("runtime-last-ble-scan").textContent = state.last_ble_scan_ts || "";
+                document.getElementById("runtime-wifi-running").textContent = state.wifi_scan_running ? "yes" : "no";
+                document.getElementById("runtime-ble-running").textContent = state.ble_scan_running ? "yes" : "no";
+                document.getElementById("runtime-scan-loop-error").textContent = state.scan_loop_error || "";
             } catch (err) {
+                window.setTimeout(pollStatus, 2000);
                 return;
             }
 
-            window.setTimeout(pollStatus, 1000);
+            window.setTimeout(pollStatus, transitionModes.has(state.mode) ? 1000 : 2000);
         }
 
-        if (transitionModes.has({{ runtime_state.mode|tojson }})) {
-            window.setTimeout(pollStatus, 1000);
-        }
+        window.setTimeout(pollStatus, transitionModes.has({{ runtime_state.mode|tojson }}) ? 1000 : 2000);
     </script>
 </body>
 </html>
