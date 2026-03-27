@@ -1,5 +1,6 @@
 import os
 import sys
+import shutil
 import subprocess
 import threading
 import time
@@ -81,6 +82,8 @@ RUNTIME_STATE = {
 _CONTROLLER_THREAD = None
 _GPS_READER_THREAD = None
 _SCAN_LOOP_THREAD = None
+APP_STARTED_MONOTONIC = time.monotonic()
+_EINK_DAEMON_STARTED = False
 
 
 def _utcnow():
@@ -468,6 +471,7 @@ def _ensure_runtime_controller_started():
         _CONTROLLER_THREAD.start()
     _ensure_gps_reader_started()
     _ensure_scan_loop_started()
+    _ensure_eink_daemon_started()
 
 
 def _split_tags(tags):
@@ -622,6 +626,139 @@ def _ensure_scan_loop_started():
             should_start_scan_loop = True
     if should_start_scan_loop:
         _SCAN_LOOP_THREAD.start()
+
+
+def _format_elapsed_compact(seconds):
+    if seconds is None:
+        return "never"
+    seconds = max(int(seconds), 0)
+    hours, remainder = divmod(seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if hours:
+        return f"{hours}h {minutes}m"
+    if minutes:
+        return f"{minutes}m {secs}s"
+    return f"{secs}s"
+
+
+def _format_since(timestamp):
+    elapsed = _seconds_since(timestamp)
+    if elapsed is None:
+        return "never"
+    return f"{_format_elapsed_compact(elapsed)} ago"
+
+
+def _cpu_usage_percent():
+    try:
+        load1 = os.getloadavg()[0]
+    except (AttributeError, OSError):
+        return None
+    cpu_count = os.cpu_count() or 1
+    return round((load1 / cpu_count) * 100.0, 1)
+
+
+def _memory_usage_percent():
+    try:
+        with open("/proc/meminfo", "r", encoding="utf-8") as handle:
+            values = {}
+            for line in handle:
+                key, raw_value = line.split(":", 1)
+                values[key] = int(raw_value.strip().split()[0])
+        total = values.get("MemTotal")
+        available = values.get("MemAvailable")
+        if not total or available is None:
+            return None
+        used = total - available
+        return round((used / total) * 100.0, 1)
+    except (OSError, ValueError):
+        return None
+
+
+def _disk_usage_percent(path="/"):
+    try:
+        usage = shutil.disk_usage(path)
+    except OSError:
+        return None
+    if usage.total <= 0:
+        return None
+    return round((usage.used / usage.total) * 100.0, 1)
+
+
+def _build_threat_summary():
+    baseline = get_latest_baseline()
+    baseline_id = baseline[0] if baseline else None
+    baseline_wifi_set = get_baseline_wifi_set(baseline_id) if baseline_id is not None else set()
+    baseline_ble_set = get_baseline_ble_set(baseline_id) if baseline_id is not None else set()
+    wifi_rows = get_wifi_rows()
+    ble_rows = get_ble_rows()
+
+    high_risk_count = 0
+    new_baseline_count = 0
+
+    for row in wifi_rows:
+        bssid, ssid, hidden, latest_signal_dbm, strongest_signal_dbm, freq_mhz, channel, security, seen_count, first_seen, last_seen = row
+        vendor = vendor_lookup_mac(bssid)
+        status, score, tags = classify_wifi(hidden, latest_signal_dbm, vendor, first_seen, baseline_id, bssid, baseline_wifi_set)
+        if score >= 6:
+            high_risk_count += 1
+        if "new-baseline" in tags:
+            new_baseline_count += 1
+
+    for row in ble_rows:
+        address, name, latest_rssi, strongest_rssi, vendor, seen_count, first_seen, last_seen = row
+        status, score, tags = classify_ble(name, vendor, latest_rssi, first_seen, baseline_id, address, baseline_ble_set)
+        if score >= 6:
+            high_risk_count += 1
+        if "new-baseline" in tags:
+            new_baseline_count += 1
+
+    return {
+        "wifi_devices": len(wifi_rows),
+        "ble_devices": len(ble_rows),
+        "new_baseline_count": new_baseline_count,
+        "high_risk_count": high_risk_count,
+    }
+
+
+def _build_eink_snapshot():
+    with RUNTIME_LOCK:
+        runtime_state = dict(RUNTIME_STATE)
+
+    now = datetime.now()
+    gps_locked = bool(runtime_state.get("gps_connected") and runtime_state.get("gps_last_fix_ts"))
+    summary = _build_threat_summary()
+
+    return {
+        "local_time": now.strftime("%H:%M:%S"),
+        "local_date": now.strftime("%Y-%m-%d"),
+        "uptime": _format_elapsed_compact(time.monotonic() - APP_STARTED_MONOTONIC),
+        "scanning_enabled": runtime_state.get("scanning_enabled", False),
+        "turbo_enabled": runtime_state.get("turbo_enabled", False),
+        "gps_lock": gps_locked,
+        "cpu_percent": _cpu_usage_percent(),
+        "ram_percent": _memory_usage_percent(),
+        "disk_percent": _disk_usage_percent("/"),
+        "last_wifi_scan": _format_since(runtime_state.get("last_wifi_scan_ts")),
+        "last_ble_scan": _format_since(runtime_state.get("last_ble_scan_ts")),
+        "wifi_devices": summary["wifi_devices"],
+        "ble_devices": summary["ble_devices"],
+        "new_baseline_count": summary["new_baseline_count"],
+        "high_risk_count": summary["high_risk_count"],
+    }
+
+
+def _ensure_eink_daemon_started():
+    global _EINK_DAEMON_STARTED
+    if _EINK_DAEMON_STARTED:
+        return
+    try:
+        from eink.daemon import start_daemon
+
+        start_daemon(_build_eink_snapshot)
+        _EINK_DAEMON_STARTED = True
+    except Exception as e:
+        app.logger.exception("Failed to start e-ink daemon: %s", e)
+        _EINK_DAEMON_STARTED = True
 
 
 @app.route("/")
