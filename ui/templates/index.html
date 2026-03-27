@@ -27,10 +27,51 @@
         .filters {
             margin-bottom: 12px;
         }
+        .runtime {
+            margin-bottom: 16px;
+            padding: 10px;
+            border: 1px solid #999;
+            background: #f8f8f8;
+        }
+        .runtime-actions form {
+            display: inline-block;
+            margin-right: 8px;
+            margin-bottom: 8px;
+        }
+        button.button {
+            display: inline-block;
+            padding: 8px 12px;
+            border: 1px solid #444;
+            text-decoration: none;
+            color: black;
+            background: white;
+            margin-right: 8px;
+            margin-bottom: 12px;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
     <h1>Wraith RF Detector</h1>
+    <div class="runtime">
+        <div><b>Mode:</b> <span id="runtime-mode">{{ runtime_state.mode }}</span></div>
+        <div><b>Message:</b> <span id="runtime-message">{{ runtime_state.operator_message }}</span></div>
+        <div><b>GPS Device:</b> <span id="runtime-gps-device">{{ runtime_state.gps_device }}</span></div>
+        <div><b>GPS Connected:</b> <span id="runtime-gps-connected">{{ "yes" if runtime_state.gps_connected else "no" }}</span></div>
+        <div class="runtime-actions">
+            {% if "prepare_mobile" in runtime_state.allowed_actions %}
+            <form method="post" action="{{ url_for('prepare_mobile', filter=active_filter) }}">
+                <button class="button" type="submit">Prepare Mobile</button>
+            </form>
+            {% endif %}
+            {% if "start_return" in runtime_state.allowed_actions %}
+            <form method="post" action="{{ url_for('start_return', filter=active_filter) }}">
+                <button class="button" type="submit">Start Return</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+
     <a class="button" href="{{ url_for('scan_wifi', filter=active_filter) }}">Run Wi-Fi Scan</a>
     <a class="button" href="{{ url_for('scan_ble', filter=active_filter) }}">Run BLE Scan</a>
     <a class="button" href="{{ url_for('capture_baseline', filter=active_filter) }}">Capture Baseline</a>
@@ -125,5 +166,90 @@
         </tr>
         {% endfor %}
     </table>
+
+    <h2>Recent Wi-Fi Observations</h2>
+    <table>
+        <tr>
+            <th>ts</th>
+            <th>bssid</th>
+            <th>ssid</th>
+            <th>signal_dbm</th>
+            <th>gps_lat</th>
+            <th>gps_lon</th>
+            <th>gps_fix_timestamp</th>
+            <th>gps_date</th>
+            <th>gps_time</th>
+        </tr>
+        {% for item in recent_wifi %}
+        <tr>
+            <td class="mono">{{ item.ts }}</td>
+            <td class="mono">{{ item.bssid }}</td>
+            <td>{{ item.ssid or "" }}</td>
+            <td>{{ item.signal_dbm if item.signal_dbm is not none else "" }}</td>
+            <td>{{ item.gps_lat if item.gps_lat is not none else "" }}</td>
+            <td>{{ item.gps_lon if item.gps_lon is not none else "" }}</td>
+            <td class="mono">{{ item.gps_fix_timestamp or "" }}</td>
+            <td>{{ item.gps_date or "" }}</td>
+            <td>{{ item.gps_time or "" }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <h2>Recent BLE Observations</h2>
+    <table>
+        <tr>
+            <th>ts</th>
+            <th>address</th>
+            <th>name</th>
+            <th>rssi</th>
+            <th>gps_lat</th>
+            <th>gps_lon</th>
+            <th>gps_fix_timestamp</th>
+            <th>gps_date</th>
+            <th>gps_time</th>
+        </tr>
+        {% for item in recent_ble %}
+        <tr>
+            <td class="mono">{{ item.ts }}</td>
+            <td class="mono">{{ item.address }}</td>
+            <td>{{ item.name or "" }}</td>
+            <td>{{ item.rssi if item.rssi is not none else "" }}</td>
+            <td>{{ item.gps_lat if item.gps_lat is not none else "" }}</td>
+            <td>{{ item.gps_lon if item.gps_lon is not none else "" }}</td>
+            <td class="mono">{{ item.gps_fix_timestamp or "" }}</td>
+            <td>{{ item.gps_date or "" }}</td>
+            <td>{{ item.gps_time or "" }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    <script>
+        const transitionModes = new Set({{ transition_modes|tojson }});
+
+        async function pollStatus() {
+            try {
+                const response = await fetch("{{ url_for('status') }}", {cache: "no-store"});
+                if (!response.ok) {
+                    return;
+                }
+                const state = await response.json();
+                document.getElementById("runtime-mode").textContent = state.mode;
+                document.getElementById("runtime-message").textContent = state.operator_message;
+                document.getElementById("runtime-gps-device").textContent = state.gps_device;
+                document.getElementById("runtime-gps-connected").textContent = state.gps_connected ? "yes" : "no";
+
+                if (!transitionModes.has(state.mode)) {
+                    return;
+                }
+            } catch (err) {
+                return;
+            }
+
+            window.setTimeout(pollStatus, 1000);
+        }
+
+        if (transitionModes.has({{ runtime_state.mode|tojson }})) {
+            window.setTimeout(pollStatus, 1000);
+        }
+    </script>
 </body>
 </html>

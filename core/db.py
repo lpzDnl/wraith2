@@ -12,6 +12,13 @@ def db():
     return sqlite3.connect(DB_PATH)
 
 
+def _ensure_column(cur, table: str, column: str, column_type: str):
+    cur.execute(f"PRAGMA table_info({table})")
+    columns = {row[1] for row in cur.fetchall()}
+    if column not in columns:
+        cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_type}")
+
+
 def init_db():
     conn = db()
     cur = conn.cursor()
@@ -28,7 +35,12 @@ def init_db():
             freq_mhz INTEGER,
             channel TEXT,
             security TEXT,
-            raw TEXT
+            raw TEXT,
+            gps_lat REAL,
+            gps_lon REAL,
+            gps_fix_timestamp TEXT,
+            gps_date TEXT,
+            gps_time TEXT
         )
     """)
 
@@ -63,6 +75,21 @@ def init_db():
     """)
 
     cur.execute("""
+        CREATE TABLE IF NOT EXISTS ble_observations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TEXT NOT NULL,
+            address TEXT NOT NULL,
+            name TEXT,
+            rssi REAL,
+            gps_lat REAL,
+            gps_lon REAL,
+            gps_fix_timestamp TEXT,
+            gps_date TEXT,
+            gps_time TEXT
+        )
+    """)
+
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS baselines (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
@@ -93,6 +120,12 @@ def init_db():
             PRIMARY KEY (baseline_id, address)
         )
     """)
+
+    _ensure_column(cur, "wifi_observations", "gps_lat", "REAL")
+    _ensure_column(cur, "wifi_observations", "gps_lon", "REAL")
+    _ensure_column(cur, "wifi_observations", "gps_fix_timestamp", "TEXT")
+    _ensure_column(cur, "wifi_observations", "gps_date", "TEXT")
+    _ensure_column(cur, "wifi_observations", "gps_time", "TEXT")
 
     conn.commit()
     conn.close()
@@ -145,14 +178,16 @@ def get_baseline_ble_set(baseline_id: int) -> set[str]:
 
 def log_wifi(interface: str, item: dict):
     now = datetime.utcnow().isoformat()
+    gps = item.get("gps") or {}
 
     conn = db()
     cur = conn.cursor()
 
     cur.execute("""
         INSERT INTO wifi_observations (
-            ts, interface, bssid, ssid, hidden, signal_dbm, freq_mhz, channel, security, raw
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ts, interface, bssid, ssid, hidden, signal_dbm, freq_mhz, channel, security, raw,
+            gps_lat, gps_lon, gps_fix_timestamp, gps_date, gps_time
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         now,
         interface,
@@ -163,7 +198,12 @@ def log_wifi(interface: str, item: dict):
         item["freq_mhz"],
         item["channel"],
         item["security"],
-        item["raw"]
+        item["raw"],
+        gps.get("lat"),
+        gps.get("lon"),
+        gps.get("ts"),
+        gps.get("date"),
+        gps.get("time"),
     ))
 
     cur.execute("SELECT bssid, strongest_signal_dbm, seen_count FROM wifi_devices WHERE bssid = ?", (item["bssid"],))
@@ -206,9 +246,27 @@ def log_wifi(interface: str, item: dict):
 def log_ble(address: str, name: str, rssi, gps=None):
     now = datetime.utcnow().isoformat()
     vendor = vendor_lookup_mac(address)
+    gps = gps or {}
 
     conn = db()
     cur = conn.cursor()
+
+    cur.execute("""
+        INSERT INTO ble_observations (
+            ts, address, name, rssi, gps_lat, gps_lon, gps_fix_timestamp, gps_date, gps_time
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        now,
+        address.lower(),
+        name or "",
+        rssi,
+        gps.get("lat"),
+        gps.get("lon"),
+        gps.get("ts"),
+        gps.get("date"),
+        gps.get("time"),
+    ))
+
     cur.execute("SELECT strongest_rssi, seen_count FROM ble_devices WHERE address = ?", (address,))
     row = cur.fetchone()
 
@@ -312,6 +370,52 @@ def get_ble_rows():
                seen_count, first_seen, last_seen
         FROM ble_devices
     """)
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+
+def get_recent_wifi_observations(limit: int = 20):
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT
+            ts,
+            bssid,
+            ssid,
+            signal_dbm,
+            gps_lat,
+            gps_lon,
+            gps_fix_timestamp,
+            gps_date,
+            gps_time
+        FROM wifi_observations
+        ORDER BY ts DESC, id DESC
+        LIMIT ?
+    """, (limit,))
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+
+def get_recent_ble_observations(limit: int = 20):
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT
+            ts,
+            address,
+            name,
+            rssi,
+            gps_lat,
+            gps_lon,
+            gps_fix_timestamp,
+            gps_date,
+            gps_time
+        FROM ble_observations
+        ORDER BY ts DESC, id DESC
+        LIMIT ?
+    """, (limit,))
     rows = cur.fetchall()
     conn.close()
     return rows
