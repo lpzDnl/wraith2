@@ -81,7 +81,7 @@ E-ink display (planned)
 Battery / UPS for portability
 🚀 Getting Started
 Clone
-git clone https://github.com/lpzDnl/wraith2.git
+git clone ~/rf-detector
 cd wraith2
 Install
 python3 -m venv venv
