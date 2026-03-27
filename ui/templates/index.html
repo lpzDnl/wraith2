@@ -1,0 +1,129 @@
+<html>
+<head>
+    <title>Wraith RF Detector</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 16px; }
+        table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
+        th, td { border: 1px solid #999; padding: 6px; font-size: 14px; }
+        th { background: #eee; }
+        .high { background: #ffdddd; }
+        .medium { background: #fff2cc; }
+        .ok { background: #e7f4e4; }
+        .mono { font-family: monospace; }
+        .summary { margin-bottom: 16px; padding: 10px; border: 1px solid #999; }
+        a.button {
+            display: inline-block;
+            padding: 8px 12px;
+            border: 1px solid #444;
+            text-decoration: none;
+            color: black;
+            margin-right: 8px;
+            margin-bottom: 12px;
+        }
+        a.button.active {
+            background: #222;
+            color: white;
+        }
+        .filters {
+            margin-bottom: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Wraith RF Detector</h1>
+    <a class="button" href="{{ url_for('scan_wifi', filter=active_filter) }}">Run Wi-Fi Scan</a>
+    <a class="button" href="{{ url_for('scan_ble', filter=active_filter) }}">Run BLE Scan</a>
+    <a class="button" href="{{ url_for('capture_baseline', filter=active_filter) }}">Capture Baseline</a>
+
+    <div class="filters">
+        <a class="button{% if active_filter == 'all' %} active{% endif %}" href="{{ url_for('index', filter='all') }}">All</a>
+        <a class="button{% if active_filter == 'high' %} active{% endif %}" href="{{ url_for('index', filter='high') }}">High Risk</a>
+        <a class="button{% if active_filter == 'new' %} active{% endif %}" href="{{ url_for('index', filter='new') }}">New Devices</a>
+        <a class="button{% if active_filter == 'approaching' %} active{% endif %}" href="{{ url_for('index', filter='approaching') }}">Approaching</a>
+    </div>
+
+    <div class="summary">
+        <b>Baseline:</b> {{ baseline.name }} &nbsp;
+        <b>Created:</b> {{ baseline.time }}
+    </div>
+
+    <div class="summary">
+        <b>Wi-Fi devices:</b> {{ summary.wifi_devices }} &nbsp;
+        <b>Hidden:</b> {{ summary.hidden_count }} &nbsp;
+        <b>5 GHz:</b> {{ summary.five_count }} &nbsp;
+        <b>New Wi-Fi:</b> {{ summary.new_wifi_count }} &nbsp;
+        <b>New vs baseline:</b> {{ summary.new_wifi_baseline_count }} &nbsp;&nbsp;
+        <b>BLE devices:</b> {{ summary.ble_devices }} &nbsp;
+        <b>New BLE:</b> {{ summary.new_ble_count }} &nbsp;
+        <b>New BLE vs baseline:</b> {{ summary.new_ble_baseline_count }}
+    </div>
+
+    <h2>Wi-Fi</h2>
+    <table>
+        <tr>
+            <th>Status</th>
+            <th>Tags</th>
+            <th>BSSID</th>
+            <th>SSID</th>
+            <th>Vendor</th>
+            <th>Hidden</th>
+            <th>Latest dBm</th>
+            <th>Strongest dBm</th>
+            <th>Band</th>
+            <th>Channel/Freq</th>
+            <th>Security</th>
+            <th>Seen</th>
+            <th>First Seen</th>
+            <th>Last Seen</th>
+        </tr>
+        {% for item in processed_wifi %}
+        <tr class="{% if item.score >= 6 %}high{% elif item.score >= 3 %}medium{% else %}ok{% endif %}">
+            <td>{{ item.status }}</td>
+            <td>{{ item.tags }}</td>
+            <td class="mono">{{ item.bssid }}</td>
+            <td>{{ item.ssid }}</td>
+            <td>{{ item.vendor }}</td>
+            <td>{{ item.hidden }}</td>
+            <td>{{ item.latest }}</td>
+            <td>{{ item.strongest }}</td>
+            <td>{{ item.band }}</td>
+            <td>{{ item.chan_or_freq }}</td>
+            <td>{{ item.security }}</td>
+            <td>{{ item.seen_count }}</td>
+            <td>{{ item.first_seen }}</td>
+            <td>{{ item.last_seen }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <h2>Bluetooth Low Energy</h2>
+    <table>
+        <tr>
+            <th>Status</th>
+            <th>Tags</th>
+            <th>Address</th>
+            <th>Name</th>
+            <th>Vendor</th>
+            <th>Latest RSSI</th>
+            <th>Strongest RSSI</th>
+            <th>Seen</th>
+            <th>First Seen</th>
+            <th>Last Seen</th>
+        </tr>
+        {% for item in processed_ble %}
+        <tr class="{% if item.score >= 6 %}high{% elif item.score >= 3 %}medium{% else %}ok{% endif %}">
+            <td>{{ item.status }}</td>
+            <td>{{ item.tags }}</td>
+            <td class="mono">{{ item.address }}</td>
+            <td>{{ item.name }}</td>
+            <td>{{ item.vendor }}</td>
+            <td>{{ item.latest }}</td>
+            <td>{{ item.strongest }}</td>
+            <td>{{ item.seen_count }}</td>
+            <td>{{ item.first_seen }}</td>
+            <td>{{ item.last_seen }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</body>
+</html>
