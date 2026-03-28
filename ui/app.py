@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from core.db import (
     create_baseline,
+    db as open_db,
     get_baseline_ble_set,
     get_baseline_wifi_set,
     get_ble_rows,
@@ -202,6 +203,58 @@ def _render_prepare_response():
     if request.is_json:
         return jsonify(_runtime_snapshot())
     return redirect(url_for("index", filter=request.args.get("filter", "all")))
+
+
+def _health_snapshot():
+    reasons = []
+
+    try:
+        conn = open_db()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT 1")
+            cur.fetchone()
+            db_ok = True
+        finally:
+            conn.close()
+    except Exception as e:
+        db_ok = False
+        reasons.append(f"db query failed: {e}")
+
+    with RUNTIME_LOCK:
+        last_wifi_scan_ts = RUNTIME_STATE.get("last_wifi_scan_ts")
+        last_ble_scan_ts = RUNTIME_STATE.get("last_ble_scan_ts")
+        gps_last_fix_ts = RUNTIME_STATE.get("gps_last_fix_ts")
+        wifi_scan_running = bool(RUNTIME_STATE.get("wifi_scan_running"))
+        ble_scan_running = bool(RUNTIME_STATE.get("ble_scan_running"))
+
+    wifi_scan_age = _seconds_since(last_wifi_scan_ts)
+    ble_scan_age = _seconds_since(last_ble_scan_ts)
+    gps_fix_age = _seconds_since(gps_last_fix_ts)
+
+    scanning_recent = any(
+        age is not None and age <= 60 for age in (wifi_scan_age, ble_scan_age)
+    )
+    gps_recent = gps_fix_age is not None and gps_fix_age <= 120
+
+    if not scanning_recent:
+        reasons.append("no wifi or ble scan recorded in the last 60 seconds")
+    if not gps_recent:
+        reasons.append("no gps fix recorded in the last 120 seconds")
+
+    ok = db_ok and scanning_recent
+    return {
+        "ok": ok,
+        "db_ok": db_ok,
+        "scanning_recent": scanning_recent,
+        "gps_recent": gps_recent,
+        "wifi_scan_running": wifi_scan_running,
+        "ble_scan_running": ble_scan_running,
+        "last_wifi_scan_ts": last_wifi_scan_ts,
+        "last_ble_scan_ts": last_ble_scan_ts,
+        "gps_last_fix_ts": gps_last_fix_ts,
+        "reasons": reasons,
+    }
 
 
 def _shutdown_system():
@@ -919,6 +972,13 @@ def status():
             RUNTIME_STATE["transition_started_ts"] = None
         snapshot = _runtime_snapshot()
     return jsonify(snapshot)
+
+
+@app.route("/health")
+def health():
+    _ensure_runtime_controller_started()
+    snapshot = _health_snapshot()
+    return jsonify(snapshot), 200 if snapshot["ok"] else 503
 
 
 @app.route("/start_scanning", methods=["POST"])
