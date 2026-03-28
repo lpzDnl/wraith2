@@ -204,7 +204,7 @@ def rotating_screens(size, snapshot):
     left_lines = [
         f"High {snapshot.get('high_risk_count', 0)}",
         f"New  {snapshot.get('new_baseline_count', 0)}",
-        f"GPS lock {'yes' if snapshot.get('gps_lock') else 'no'}",
+        f"GPS {snapshot.get('gps_state', 'NO_GPS')}",
         f"Sats {_format_metric(snapshot.get('satellites_seen'))}",
     ]
     right_lines = [

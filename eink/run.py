@@ -2,7 +2,7 @@ import logging
 import os
 import shutil
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from glob import glob
 
 from core.db import (
@@ -15,6 +15,7 @@ from core.db import (
     get_wifi_rows,
     init_db,
 )
+from core.gps_state import derive_gps_state, seconds_since
 from core.risk import classify_ble, classify_wifi
 from core.vendors import vendor_lookup_mac
 from eink.display import EInkDisplay
@@ -39,23 +40,8 @@ def _configure_logging():
     )
 
 
-def _parse_timestamp(timestamp):
-    if not timestamp:
-        return None
-    try:
-        parsed = datetime.fromisoformat(timestamp)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
-    return parsed
-
-
 def _seconds_since(timestamp):
-    parsed = _parse_timestamp(timestamp)
-    if parsed is None:
-        return None
-    return max((datetime.now(timezone.utc) - parsed.astimezone(timezone.utc)).total_seconds(), 0.0)
+    return seconds_since(timestamp)
 
 
 def _format_elapsed_compact(seconds):
@@ -240,6 +226,9 @@ def _update_live_gps_from_line(line, snapshot):
 
 def _collect_live_gps_snapshot():
     snapshot = {
+        "gps_connected": False,
+        "gps_device": None,
+        "gps_error": None,
         "satellites_seen": None,
         "gps_alt": None,
         "gps_speed": None,
@@ -249,14 +238,19 @@ def _collect_live_gps_snapshot():
 
     device_path = _discover_gps_device()
     if not device_path:
+        snapshot["gps_error"] = "GPS device not found"
         return snapshot
+    snapshot["gps_connected"] = True
+    snapshot["gps_device"] = device_path
 
     deadline = time.monotonic() + GPS_READ_TIMEOUT_SECONDS
     buffer = ""
 
     try:
         fd = os.open(device_path, os.O_RDONLY | os.O_NONBLOCK)
-    except OSError:
+    except OSError as exc:
+        snapshot["gps_connected"] = False
+        snapshot["gps_error"] = str(exc)
         return snapshot
 
     try:
@@ -266,7 +260,9 @@ def _collect_live_gps_snapshot():
             except BlockingIOError:
                 time.sleep(GPS_READ_POLL_SECONDS)
                 continue
-            except OSError:
+            except OSError as exc:
+                snapshot["gps_connected"] = False
+                snapshot["gps_error"] = str(exc)
                 break
 
             if not chunk:
@@ -336,6 +332,12 @@ def _build_snapshot():
     gps_fix_timestamp = latest_gps.get("gps_fix_timestamp") if latest_gps else None
     gps_lock_age = _seconds_since(gps_fix_timestamp)
     gps_lock = (gps_lock_age is not None and gps_lock_age <= 60) or bool(live_gps.get("satellites_seen"))
+    gps_state = derive_gps_state(
+        gps_fix_timestamp,
+        gps_connected=live_gps.get("gps_connected"),
+        gps_device=live_gps.get("gps_device"),
+        gps_error=live_gps.get("gps_error"),
+    )
 
     recent_scan_age = min(
         [age for age in (_seconds_since(last_wifi_scan_ts), _seconds_since(last_ble_scan_ts)) if age is not None],
@@ -351,6 +353,7 @@ def _build_snapshot():
         "scanning_enabled": scanning_enabled,
         "turbo_enabled": False,
         "gps_lock": gps_lock,
+        "gps_state": gps_state,
         "gps_lat": latest_gps.get("gps_lat") if latest_gps else None,
         "gps_lon": latest_gps.get("gps_lon") if latest_gps else None,
         "gps_fix_timestamp": gps_fix_timestamp,

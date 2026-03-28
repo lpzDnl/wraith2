@@ -25,6 +25,7 @@ from core.db import (
     log_ble,
     log_wifi,
 )
+from core.gps_state import derive_gps_state, seconds_since
 from core.risk import band_label, classify_ble, classify_wifi, is_new
 from core.vendors import vendor_lookup_mac
 from scanners.ble import parse_ble_scan, run_ble_scan
@@ -196,6 +197,12 @@ def _runtime_snapshot():
         snapshot = dict(RUNTIME_STATE)
         snapshot["allowed_actions"] = _allowed_actions_locked()
         snapshot["active_transition"] = _active_transition_locked()
+        snapshot["gps_state"] = derive_gps_state(
+            snapshot.get("gps_last_fix_ts"),
+            gps_connected=snapshot.get("gps_connected"),
+            gps_device=snapshot.get("gps_device"),
+            gps_error=snapshot.get("gps_error"),
+        )
         return snapshot
 
 
@@ -225,12 +232,21 @@ def _health_snapshot():
         last_wifi_scan_ts = RUNTIME_STATE.get("last_wifi_scan_ts")
         last_ble_scan_ts = RUNTIME_STATE.get("last_ble_scan_ts")
         gps_last_fix_ts = RUNTIME_STATE.get("gps_last_fix_ts")
+        gps_connected = RUNTIME_STATE.get("gps_connected")
+        gps_device = RUNTIME_STATE.get("gps_device")
+        gps_error = RUNTIME_STATE.get("gps_error")
         wifi_scan_running = bool(RUNTIME_STATE.get("wifi_scan_running"))
         ble_scan_running = bool(RUNTIME_STATE.get("ble_scan_running"))
 
     wifi_scan_age = _seconds_since(last_wifi_scan_ts)
     ble_scan_age = _seconds_since(last_ble_scan_ts)
     gps_fix_age = _seconds_since(gps_last_fix_ts)
+    gps_state = derive_gps_state(
+        gps_last_fix_ts,
+        gps_connected=gps_connected,
+        gps_device=gps_device,
+        gps_error=gps_error,
+    )
 
     scanning_recent = any(
         age is not None and age <= 60 for age in (wifi_scan_age, ble_scan_age)
@@ -253,6 +269,7 @@ def _health_snapshot():
         "last_wifi_scan_ts": last_wifi_scan_ts,
         "last_ble_scan_ts": last_ble_scan_ts,
         "gps_last_fix_ts": gps_last_fix_ts,
+        "gps_state": gps_state,
         "reasons": reasons,
     }
 
@@ -574,16 +591,6 @@ def _gps_snapshot():
         if "accuracy" in LAST_GPS:
             snapshot["accuracy"] = LAST_GPS["accuracy"]
         return snapshot
-
-
-def _seconds_since(timestamp):
-    if not timestamp:
-        return None
-    try:
-        delta = datetime.utcnow() - datetime.fromisoformat(timestamp)
-    except ValueError:
-        return None
-    return max(delta.total_seconds(), 0.0)
 
 
 def _run_wifi_scan_once():
