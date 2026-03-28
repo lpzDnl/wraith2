@@ -3,6 +3,7 @@ import os
 import shutil
 import time
 from datetime import datetime, timezone
+from glob import glob
 
 from core.db import (
     get_baseline_ble_set,
@@ -25,6 +26,10 @@ BOOT_SCREEN_SECONDS = 2
 READY_SCREEN_SECONDS = 2
 ROTATE_SECONDS = 12
 APP_STARTED_MONOTONIC = time.monotonic()
+GPS_BY_ID_GLOB = "/dev/serial/by-id/*"
+GPS_TTY_GLOB = "/dev/ttyACM*"
+GPS_READ_TIMEOUT_SECONDS = 1.0
+GPS_READ_POLL_SECONDS = 0.1
 
 
 def _configure_logging():
@@ -145,6 +150,139 @@ def _build_threat_summary():
     }
 
 
+def _parse_nmea_coordinate(value, direction):
+    if not value or not direction:
+        return None
+    try:
+        numeric = float(value)
+    except ValueError:
+        return None
+
+    degrees = int(numeric // 100)
+    minutes = numeric - (degrees * 100)
+    decimal = degrees + (minutes / 60.0)
+
+    if direction in {"S", "W"}:
+        decimal *= -1
+    return round(decimal, 7)
+
+
+def _is_ublox_by_id_path(path):
+    name = os.path.basename(path).lower()
+    return "u-blox" in name or "ublox" in name
+
+
+def _discover_gps_device():
+    preferred = [path for path in glob(GPS_BY_ID_GLOB) if os.path.exists(path)]
+    preferred.sort(key=lambda path: (not _is_ublox_by_id_path(path), path))
+    if preferred:
+        return preferred[0]
+
+    fallback = [path for path in sorted(glob(GPS_TTY_GLOB)) if os.path.exists(path)]
+    if fallback:
+        return fallback[0]
+    return None
+
+
+def _update_live_gps_from_line(line, snapshot):
+    sentence = line.strip()
+    if not sentence.startswith("$"):
+        return
+
+    body = sentence[1:].split("*", 1)[0]
+    parts = body.split(",")
+    if not parts:
+        return
+
+    kind = parts[0]
+
+    if kind in {"GPGSV", "GNGSV"} and len(parts) > 3:
+        try:
+            if parts[3]:
+                snapshot["satellites_seen"] = int(parts[3])
+        except ValueError:
+            pass
+        return
+
+    if kind in {"GPGGA", "GNGGA"} and len(parts) > 9:
+        try:
+            if parts[7]:
+                snapshot["satellites_seen"] = int(parts[7])
+        except ValueError:
+            pass
+        try:
+            if parts[9]:
+                snapshot["gps_alt"] = float(parts[9])
+        except ValueError:
+            pass
+        lat = _parse_nmea_coordinate(parts[2], parts[3]) if len(parts) > 4 else None
+        lon = _parse_nmea_coordinate(parts[4], parts[5]) if len(parts) > 5 else None
+        if lat is not None and lon is not None:
+            snapshot["gps_lat_live"] = lat
+            snapshot["gps_lon_live"] = lon
+        return
+
+    if kind in {"GPRMC", "GNRMC"} and len(parts) > 7:
+        try:
+            if parts[7]:
+                snapshot["gps_speed"] = float(parts[7])
+        except ValueError:
+            pass
+        return
+
+    if kind in {"GPVTG", "GNVTG"} and len(parts) > 7:
+        try:
+            if parts[7]:
+                snapshot["gps_speed"] = float(parts[7])
+        except ValueError:
+            pass
+
+
+def _collect_live_gps_snapshot():
+    snapshot = {
+        "satellites_seen": None,
+        "gps_alt": None,
+        "gps_speed": None,
+        "gps_lat_live": None,
+        "gps_lon_live": None,
+    }
+
+    device_path = _discover_gps_device()
+    if not device_path:
+        return snapshot
+
+    deadline = time.monotonic() + GPS_READ_TIMEOUT_SECONDS
+    buffer = ""
+
+    try:
+        fd = os.open(device_path, os.O_RDONLY | os.O_NONBLOCK)
+    except OSError:
+        return snapshot
+
+    try:
+        while time.monotonic() < deadline:
+            try:
+                chunk = os.read(fd, 4096)
+            except BlockingIOError:
+                time.sleep(GPS_READ_POLL_SECONDS)
+                continue
+            except OSError:
+                break
+
+            if not chunk:
+                time.sleep(GPS_READ_POLL_SECONDS)
+                continue
+
+            buffer += chunk.decode("ascii", errors="ignore")
+            while "\n" in buffer:
+                line, buffer = buffer.split("\n", 1)
+                _update_live_gps_from_line(line, snapshot)
+    finally:
+        os.close(fd)
+
+    return snapshot
+
+
 def _latest_observation(rows):
     if not rows:
         return None
@@ -194,9 +332,10 @@ def _build_snapshot():
     last_wifi_scan_ts = recent_wifi[0] if recent_wifi else None
     last_ble_scan_ts = recent_ble[0] if recent_ble else None
     latest_gps = _latest_gps_observation()
+    live_gps = _collect_live_gps_snapshot()
     gps_fix_timestamp = latest_gps.get("gps_fix_timestamp") if latest_gps else None
     gps_lock_age = _seconds_since(gps_fix_timestamp)
-    gps_lock = gps_lock_age is not None and gps_lock_age <= 60
+    gps_lock = (gps_lock_age is not None and gps_lock_age <= 60) or bool(live_gps.get("satellites_seen"))
 
     recent_scan_age = min(
         [age for age in (_seconds_since(last_wifi_scan_ts), _seconds_since(last_ble_scan_ts)) if age is not None],
@@ -215,8 +354,9 @@ def _build_snapshot():
         "gps_lat": latest_gps.get("gps_lat") if latest_gps else None,
         "gps_lon": latest_gps.get("gps_lon") if latest_gps else None,
         "gps_fix_timestamp": gps_fix_timestamp,
-        "gps_alt": latest_gps.get("gps_alt") if latest_gps else None,
-        "gps_speed": latest_gps.get("gps_speed") if latest_gps else None,
+        "gps_alt": live_gps.get("gps_alt"),
+        "gps_speed": live_gps.get("gps_speed"),
+        "satellites_seen": live_gps.get("satellites_seen"),
         "cpu_percent": _cpu_usage_percent(),
         "ram_percent": _memory_usage_percent(),
         "disk_percent": _disk_usage_percent("/"),

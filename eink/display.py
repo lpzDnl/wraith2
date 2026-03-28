@@ -1,32 +1,22 @@
+# LOCKED: This device is Waveshare 2.13 V4 ONLY.
+# Do NOT change driver unless hardware changes.
+
 from PIL import Image
-from waveshare_epd import epd2in13
+from waveshare_epd import epd2in13_V4
 
 
 class EInkDisplay:
     def __init__(self):
         self.epd = None
-        self.native_width = None
-        self.native_height = None
         self.width = None
         self.height = None
 
     def initialize(self):
-        self.epd = epd2in13.EPD()
-        init_mode = getattr(self.epd, "FULL_UPDATE", None)
-        if init_mode is None:
-            self.epd.init()
-        else:
-            self.epd.init(init_mode)
-
-        try:
-            self.epd.Clear(0xFF)
-        except TypeError:
-            self.epd.Clear()
-
-        self.native_width = getattr(self.epd, "width", getattr(epd2in13, "EPD_WIDTH", 122))
-        self.native_height = getattr(self.epd, "height", getattr(epd2in13, "EPD_HEIGHT", 250))
-        self.width = max(self.native_width, self.native_height)
-        self.height = min(self.native_width, self.native_height)
+        self.epd = epd2in13_V4.EPD()
+        self.epd.init()
+        self.epd.Clear()
+        self.width = self.epd.height
+        self.height = self.epd.width
 
     @property
     def size(self):
@@ -35,12 +25,8 @@ class EInkDisplay:
     def _normalize(self, image):
         if image.mode != "1":
             image = image.convert("1")
-
         if image.size != (self.width, self.height):
             image = image.resize((self.width, self.height))
-
-        if self.native_width < self.native_height:
-            return image.rotate(90, expand=True)
         return image
 
     def render(self, image):

@@ -46,15 +46,46 @@ def _draw_screen(title, lines, snapshot, size):
         draw.text((margin, y), line, font=BODY_FONT, fill=0)
         y += 12
 
+    _draw_footer(draw, snapshot, size)
+    return image
+
+
+def _format_coord(value):
+    if value is None:
+        return "--"
+    return f"{value:.4f}"
+
+
+def _format_metric(value, suffix=""):
+    if value is None:
+        return f"--{suffix}"
+    if isinstance(value, float):
+        return f"{value:.1f}{suffix}"
+    return f"{value}{suffix}"
+
+
+def _draw_footer(draw, snapshot, size):
+    width, height = size
+    margin = 8
     footer = _footer(snapshot)
     try:
         footer_box = draw.textbbox((0, 0), footer, font=FOOTER_FONT)
         footer_height = footer_box[3] - footer_box[1]
     except AttributeError:
         footer_height = draw.textsize(footer, font=FOOTER_FONT)[1]
-    draw.line((margin, height - footer_height - 10, width - margin, height - footer_height - 10), fill=0, width=1)
+    line_y = height - footer_height - 10
+    draw.line((margin, line_y, width - margin, line_y), fill=0, width=1)
     draw.text((margin, height - footer_height - 6), footer, font=FOOTER_FONT, fill=0)
-    return image
+
+
+def _draw_bar(draw, x, y, width, height, value):
+    draw.rectangle((x, y, x + width, y + height), outline=0, width=1)
+    if value is None:
+        return
+    clamped = max(0.0, min(float(value), 100.0))
+    fill_width = int((width - 2) * (clamped / 100.0))
+    if fill_width > 0:
+        draw.rectangle((x + 1, y + 1, x + 1 + fill_width, y + height - 1), fill=0)
 
 
 def boot_screen(size, snapshot):
@@ -88,43 +119,114 @@ def ready_screen(size, snapshot):
 
 
 def rotating_screens(size, snapshot):
-    core_status = _draw_screen(
-        "WRAITH",
-        [
-            f"Time {snapshot.get('local_time', '--:--:--')}",
-            f"Date {snapshot.get('local_date', '---- -- --')}",
-            f"Uptime {snapshot.get('uptime', '0s')}",
-            f"Scan {'enabled' if snapshot.get('scanning_enabled') else 'disabled'}",
-            f"Turbo {'on' if snapshot.get('turbo_enabled') else 'off'}",
-            f"GPS {'lock' if snapshot.get('gps_lock') else 'no lock'}",
-        ],
-        snapshot,
-        size,
-    )
+    width, height = size
+    margin = 8
 
-    system_health = _draw_screen(
-        "System Health",
-        [
-            f"CPU {snapshot.get('cpu_percent', '?')}%",
-            f"RAM {snapshot.get('ram_percent', '?')}%",
-            f"Disk {snapshot.get('disk_percent', '?')}%",
-            f"Wi-Fi {snapshot.get('last_wifi_scan', 'never')}",
-            f"BLE {snapshot.get('last_ble_scan', 'never')}",
-        ],
-        snapshot,
-        size,
-    )
+    system_screen = _new_image(size)
+    draw = ImageDraw.Draw(system_screen)
+    y = margin
+    draw.text((margin, y), "System", font=TITLE_FONT, fill=0)
+    y += 18
+    draw.line((margin, y, width - margin, y), fill=0, width=1)
+    y += 7
 
-    threat_summary = _draw_screen(
-        "Threat Summary",
-        [
-            f"Wi-Fi dev {snapshot.get('wifi_devices', 0)}",
-            f"BLE dev {snapshot.get('ble_devices', 0)}",
-            f"New base {snapshot.get('new_baseline_count', 0)}",
-            f"High risk {snapshot.get('high_risk_count', 0)}",
-        ],
-        snapshot,
-        size,
-    )
+    left_lines = [
+        f"Time {snapshot.get('local_time', '--:--:--')}",
+        f"Date {snapshot.get('local_date', '---- -- --')}",
+        f"Up   {snapshot.get('uptime', '0s')}",
+    ]
+    left_y = y
+    for line in left_lines:
+        draw.text((margin, left_y), line, font=BODY_FONT, fill=0)
+        left_y += 14
 
-    return [core_status, system_health, threat_summary]
+    right_x = (width // 2) + 4
+    meter_y = y
+    for label, value in (
+        ("CPU", snapshot.get("cpu_percent")),
+        ("RAM", snapshot.get("ram_percent")),
+        ("DSK", snapshot.get("disk_percent")),
+    ):
+        draw.text((right_x, meter_y), f"{label} {_format_metric(value, '%')}", font=BODY_FONT, fill=0)
+        _draw_bar(draw, right_x, meter_y + 10, width - right_x - margin, 8, value)
+        meter_y += 20
+
+    _draw_footer(draw, snapshot, size)
+
+    collection_screen = _new_image(size)
+    draw = ImageDraw.Draw(collection_screen)
+    y = margin
+    draw.text((margin, y), "Collection", font=TITLE_FONT, fill=0)
+    y += 18
+    draw.line((margin, y, width - margin, y), fill=0, width=1)
+    y += 7
+
+    left_lines = [
+        f"Scan {'on' if snapshot.get('scanning_enabled') else 'off'}",
+        f"Turbo {'on' if snapshot.get('turbo_enabled') else 'off'}",
+        f"WiFi {snapshot.get('wifi_devices', 0)}",
+        f"BLE  {snapshot.get('ble_devices', 0)}",
+    ]
+    right_lines = [
+        f"WiFi {snapshot.get('last_wifi_scan', 'never')}",
+        f"BLE  {snapshot.get('last_ble_scan', 'never')}",
+        f"New  {snapshot.get('new_baseline_count', 0)}",
+        f"High {snapshot.get('high_risk_count', 0)}",
+    ]
+
+    left_y = y
+    right_y = y
+    right_x = (width // 2) + 4
+    for line in left_lines:
+        draw.text((margin, left_y), line, font=BODY_FONT, fill=0)
+        left_y += 14
+    for line in right_lines:
+        draw.text((right_x, right_y), line, font=BODY_FONT, fill=0)
+        right_y += 14
+
+    _draw_footer(draw, snapshot, size)
+
+    threat_screen = _new_image(size)
+    draw = ImageDraw.Draw(threat_screen)
+    y = margin
+
+    draw.text((margin, y), "Threat", font=TITLE_FONT, fill=0)
+    draw.ellipse((width - margin - 12, margin + 2, width - margin - 2, margin + 12), outline=0, fill=0 if snapshot.get("gps_lock") else 255, width=1)
+    y += 18
+    draw.line((margin, y, width - margin, y), fill=0, width=1)
+    y += 7
+
+    severity_blocks = min(max(int(snapshot.get("high_risk_count", 0)), 0), 3)
+    for index in range(3):
+        x0 = margin + (index * 10)
+        draw.rectangle((x0, y - 4, x0 + 6, y + 2), outline=0, fill=0 if index < severity_blocks else 255, width=1)
+
+    left_lines = [
+        f"High {snapshot.get('high_risk_count', 0)}",
+        f"New  {snapshot.get('new_baseline_count', 0)}",
+        f"GPS lock {'yes' if snapshot.get('gps_lock') else 'no'}",
+        f"Sats {_format_metric(snapshot.get('satellites_seen'))}",
+    ]
+    right_lines = [
+        f"Lat {_format_coord(snapshot.get('gps_lat'))}",
+        f"Lon {_format_coord(snapshot.get('gps_lon'))}",
+        f"Alt {_format_metric(snapshot.get('gps_alt'))}",
+        f"Spd {_format_metric(snapshot.get('gps_speed'))}",
+    ]
+
+    left_x = margin
+    right_x = (width // 2) + 4
+    left_y = y
+    right_y = y
+
+    for line in left_lines:
+        draw.text((left_x, left_y), line, font=BODY_FONT, fill=0)
+        left_y += 14
+
+    for line in right_lines:
+        draw.text((right_x, right_y), line, font=BODY_FONT, fill=0)
+        right_y += 12
+
+    _draw_footer(draw, snapshot, size)
+
+    return [system_screen, collection_screen, threat_screen]
