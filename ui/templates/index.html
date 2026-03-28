@@ -49,6 +49,10 @@
             margin-bottom: 12px;
             cursor: pointer;
         }
+        button.button.danger {
+            border-color: #800;
+            color: #800;
+        }
     </style>
 </head>
 <body>
@@ -77,16 +81,9 @@
             <form method="post" action="{{ url_for('toggle_turbo', filter=active_filter) }}">
                 <button class="button" type="submit">Turbo {{ "OFF" if runtime_state.turbo_enabled else "ON" }}</button>
             </form>
-            {% if "prepare_mobile" in runtime_state.allowed_actions %}
-            <form method="post" action="{{ url_for('prepare_mobile', filter=active_filter) }}">
-                <button class="button" type="submit">Prepare Mobile</button>
+            <form method="post" action="{{ url_for('shutdown', filter=active_filter) }}">
+                <button class="button danger" type="submit">Shutdown</button>
             </form>
-            {% endif %}
-            {% if "start_return" in runtime_state.allowed_actions %}
-            <form method="post" action="{{ url_for('start_return', filter=active_filter) }}">
-                <button class="button" type="submit">Start Return</button>
-            </form>
-            {% endif %}
         </div>
     </div>
 

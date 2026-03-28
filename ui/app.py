@@ -204,6 +204,14 @@ def _render_prepare_response():
     return redirect(url_for("index", filter=request.args.get("filter", "all")))
 
 
+def _shutdown_system():
+    time.sleep(1)
+    try:
+        subprocess.Popen(["sudo", "shutdown", "-h", "now"])
+    except Exception as e:
+        app.logger.exception("Failed to invoke shutdown: %s", e)
+
+
 def _is_ublox_by_id_path(path: str):
     name = os.path.basename(path).lower()
     return "u-blox" in name or "ublox" in name
@@ -937,6 +945,15 @@ def toggle_turbo():
         RUNTIME_STATE["turbo_enabled"] = not RUNTIME_STATE["turbo_enabled"]
         _update_scan_intervals_locked()
     return _render_prepare_response()
+
+
+@app.route("/shutdown", methods=["POST"])
+def shutdown():
+    _ensure_runtime_controller_started()
+    threading.Thread(target=_shutdown_system, name="wraith-shutdown", daemon=True).start()
+    if request.is_json:
+        return jsonify({"status": "ok", "message": "shutdown requested"})
+    return redirect(url_for("index", filter=request.args.get("filter", "all")))
 
 
 @app.route("/prepare_mobile", methods=["POST"])

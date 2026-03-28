@@ -2,7 +2,7 @@ import logging
 import os
 import shutil
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 from core.db import (
     get_baseline_ble_set,
@@ -38,16 +38,19 @@ def _parse_timestamp(timestamp):
     if not timestamp:
         return None
     try:
-        return datetime.fromisoformat(timestamp)
+        parsed = datetime.fromisoformat(timestamp)
     except ValueError:
         return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed
 
 
 def _seconds_since(timestamp):
     parsed = _parse_timestamp(timestamp)
     if parsed is None:
         return None
-    return max((datetime.utcnow() - parsed).total_seconds(), 0.0)
+    return max((datetime.now(timezone.utc) - parsed.astimezone(timezone.utc)).total_seconds(), 0.0)
 
 
 def _format_elapsed_compact(seconds):
@@ -148,23 +151,52 @@ def _latest_observation(rows):
     return rows[0]
 
 
+def _latest_gps_observation():
+    candidates = []
+
+    for row in get_recent_wifi_observations(500):
+        ts, bssid, ssid, signal_dbm, gps_lat, gps_lon, gps_fix_timestamp, gps_date, gps_time = row
+        if gps_lat is None or gps_lon is None:
+            continue
+        candidates.append({
+            "ts": ts,
+            "gps_lat": gps_lat,
+            "gps_lon": gps_lon,
+            "gps_fix_timestamp": gps_fix_timestamp or ts,
+            "gps_alt": None,
+            "gps_speed": None,
+        })
+
+    for row in get_recent_ble_observations(500):
+        ts, address, name, rssi, gps_lat, gps_lon, gps_fix_timestamp, gps_date, gps_time = row
+        if gps_lat is None or gps_lon is None:
+            continue
+        candidates.append({
+            "ts": ts,
+            "gps_lat": gps_lat,
+            "gps_lon": gps_lon,
+            "gps_fix_timestamp": gps_fix_timestamp or ts,
+            "gps_alt": None,
+            "gps_speed": None,
+        })
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda item: _parse_timestamp(item["ts"]) or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+    return candidates[0]
+
+
 def _build_snapshot():
-    now = datetime.now()
+    local_now = datetime.now().astimezone()
     recent_wifi = _latest_observation(get_recent_wifi_observations(1))
     recent_ble = _latest_observation(get_recent_ble_observations(1))
     last_wifi_scan_ts = recent_wifi[0] if recent_wifi else None
     last_ble_scan_ts = recent_ble[0] if recent_ble else None
-
-    gps_fix_timestamps = []
-    if recent_wifi and recent_wifi[6]:
-        gps_fix_timestamps.append(recent_wifi[6])
-    if recent_ble and recent_ble[6]:
-        gps_fix_timestamps.append(recent_ble[6])
-
-    gps_lock = any(
-        timestamp is not None and _seconds_since(timestamp) is not None and _seconds_since(timestamp) <= 60
-        for timestamp in gps_fix_timestamps
-    )
+    latest_gps = _latest_gps_observation()
+    gps_fix_timestamp = latest_gps.get("gps_fix_timestamp") if latest_gps else None
+    gps_lock_age = _seconds_since(gps_fix_timestamp)
+    gps_lock = gps_lock_age is not None and gps_lock_age <= 60
 
     recent_scan_age = min(
         [age for age in (_seconds_since(last_wifi_scan_ts), _seconds_since(last_ble_scan_ts)) if age is not None],
@@ -174,12 +206,17 @@ def _build_snapshot():
 
     summary = _build_threat_summary()
     return {
-        "local_time": now.strftime("%H:%M:%S"),
-        "local_date": now.strftime("%Y-%m-%d"),
+        "local_time": local_now.strftime("%H:%M:%S"),
+        "local_date": local_now.strftime("%Y-%m-%d"),
         "uptime": _format_elapsed_compact(time.monotonic() - APP_STARTED_MONOTONIC),
         "scanning_enabled": scanning_enabled,
         "turbo_enabled": False,
         "gps_lock": gps_lock,
+        "gps_lat": latest_gps.get("gps_lat") if latest_gps else None,
+        "gps_lon": latest_gps.get("gps_lon") if latest_gps else None,
+        "gps_fix_timestamp": gps_fix_timestamp,
+        "gps_alt": latest_gps.get("gps_alt") if latest_gps else None,
+        "gps_speed": latest_gps.get("gps_speed") if latest_gps else None,
         "cpu_percent": _cpu_usage_percent(),
         "ram_percent": _memory_usage_percent(),
         "disk_percent": _disk_usage_percent("/"),
