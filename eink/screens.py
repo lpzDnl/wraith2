@@ -148,7 +148,7 @@ def rotating_screens(size, snapshot):
         ("DSK", snapshot.get("disk_percent")),
     ):
         draw.text((right_x, meter_y), f"{label} {_format_metric(value, '%')}", font=BODY_FONT, fill=0)
-        _draw_bar(draw, right_x, meter_y + 10, width - right_x - margin, 8, value)
+        _draw_bar(draw, right_x, meter_y + 12, width - right_x - margin, 8, value)
         meter_y += 20
 
     _draw_footer(draw, snapshot, size)
@@ -200,6 +200,7 @@ def rotating_screens(size, snapshot):
     for index in range(3):
         x0 = margin + (index * 10)
         draw.rectangle((x0, y - 4, x0 + 6, y + 2), outline=0, fill=0 if index < severity_blocks else 255, width=1)
+    y += 1
 
     left_lines = [
         f"High {snapshot.get('high_risk_count', 0)}",
