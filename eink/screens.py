@@ -17,6 +17,7 @@ def _load_font(size):
 TITLE_FONT = _load_font(16)
 BODY_FONT = _load_font(11)
 FOOTER_FONT = _load_font(11)
+TIME_FONT = _load_font(9)
 
 
 def _footer(snapshot):
@@ -30,17 +31,40 @@ def _new_image(size):
     return Image.new("1", size, 255)
 
 
-def _draw_screen(title, lines, snapshot, size):
-    image = _new_image(size)
-    draw = ImageDraw.Draw(image)
-    width, height = size
+def _measure_text(draw, text, font):
+    try:
+        box = draw.textbbox((0, 0), text, font=font)
+        return box[2] - box[0], box[3] - box[1]
+    except AttributeError:
+        return draw.textsize(text, font=font)
+
+
+def _header_time(snapshot):
+    local_time = snapshot.get("local_time", "--:--")
+    return local_time[:5] if len(local_time) >= 5 else local_time
+
+
+def _draw_header(draw, title, snapshot, size):
+    width, _ = size
     margin = 8
     y = margin
 
     draw.text((margin, y), title, font=TITLE_FONT, fill=0)
+
+    local_time = _header_time(snapshot)
+    time_width, _ = _measure_text(draw, local_time, TIME_FONT)
+    draw.text((width - margin - time_width, y + 2), local_time, font=TIME_FONT, fill=0)
+
     y += 18
     draw.line((margin, y, width - margin, y), fill=0, width=1)
-    y += 5
+    return y + 5
+
+
+def _draw_screen(title, lines, snapshot, size):
+    image = _new_image(size)
+    draw = ImageDraw.Draw(image)
+    margin = 8
+    y = _draw_header(draw, title, snapshot, size)
 
     for line in lines:
         draw.text((margin, y), line, font=BODY_FONT, fill=0)
@@ -97,7 +121,6 @@ def boot_screen(size, snapshot):
         "WRAITH",
         [
             "E-ink booting",
-            f"Time {snapshot.get('local_time', '--:--:--')}",
             f"Date {snapshot.get('local_date', '---- -- --')}",
             "Starting display daemon",
         ],
@@ -112,7 +135,6 @@ def ready_screen(size, snapshot):
     return _draw_screen(
         "READY",
         [
-            f"Time {snapshot.get('local_time', '--:--:--')}",
             f"Uptime {snapshot.get('uptime', '0s')}",
             f"Scanning {scanning}",
             f"GPS {gps}",
@@ -128,18 +150,12 @@ def rotating_screens(size, snapshot):
 
     system_screen = _new_image(size)
     draw = ImageDraw.Draw(system_screen)
-    y = margin
-    draw.text((margin, y), "System", font=TITLE_FONT, fill=0)
-    y += 18
-    draw.line((margin, y, width - margin, y), fill=0, width=1)
-    y += 7
+    y = _draw_header(draw, "System", snapshot, size) + 2
 
     left_lines = [
-        f"Time {snapshot.get('local_time', '--:--:--')}",
         f"Date {snapshot.get('local_date', '---- -- --')}",
         f"Up   {snapshot.get('uptime', '0s')}",
-        _format_ip_line("USB", snapshot.get("usb_ip")),
-        _format_ip_line("LAN", snapshot.get("lan_ip")),
+        _format_ip_line("IP", snapshot.get("lan_ip")),
     ]
     left_y = y
     for line in left_lines:
@@ -161,11 +177,7 @@ def rotating_screens(size, snapshot):
 
     collection_screen = _new_image(size)
     draw = ImageDraw.Draw(collection_screen)
-    y = margin
-    draw.text((margin, y), "Collection", font=TITLE_FONT, fill=0)
-    y += 18
-    draw.line((margin, y, width - margin, y), fill=0, width=1)
-    y += 7
+    y = _draw_header(draw, "Collection", snapshot, size) + 2
 
     left_lines = [
         f"Scan {'on' if snapshot.get('scanning_enabled') else 'off'}",
@@ -195,12 +207,11 @@ def rotating_screens(size, snapshot):
     threat_screen = _new_image(size)
     draw = ImageDraw.Draw(threat_screen)
     y = margin
-
-    draw.text((margin, y), "Threat", font=TITLE_FONT, fill=0)
-    draw.ellipse((width - margin - 12, margin + 2, width - margin - 2, margin + 12), outline=0, fill=0 if snapshot.get("gps_lock") else 255, width=1)
-    y += 18
-    draw.line((margin, y, width - margin, y), fill=0, width=1)
-    y += 7
+    _draw_header(draw, "Threat", snapshot, size)
+    time_width, _ = _measure_text(draw, _header_time(snapshot), TIME_FONT)
+    gps_x1 = width - margin - time_width - 6
+    draw.ellipse((gps_x1 - 10, margin + 2, gps_x1, margin + 12), outline=0, fill=0 if snapshot.get("gps_lock") else 255, width=1)
+    y = margin + 25
 
     severity_blocks = min(max(int(snapshot.get("high_risk_count", 0)), 0), 3)
     for index in range(3):

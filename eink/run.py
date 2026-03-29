@@ -28,6 +28,7 @@ BOOT_SCREEN_SECONDS = 2
 READY_SCREEN_SECONDS = 2
 ROTATE_SECONDS = 12
 APP_STARTED_MONOTONIC = time.monotonic()
+APP_STARTED_AT = datetime.now(timezone.utc)
 HEARTBEAT_PATH = "/tmp/wraith-eink-heartbeat"
 GPS_BY_ID_GLOB = "/dev/serial/by-id/*"
 GPS_TTY_GLOB = "/dev/ttyACM*"
@@ -56,6 +57,13 @@ def _parse_timestamp(timestamp):
 
 def _seconds_since(timestamp):
     return seconds_since(timestamp)
+
+
+def _timestamp_at_or_after(timestamp, threshold):
+    parsed = _parse_timestamp(timestamp)
+    if parsed is None:
+        return False
+    return parsed >= threshold
 
 
 def _format_elapsed_compact(seconds):
@@ -162,17 +170,19 @@ def _build_threat_summary():
         bssid, ssid, hidden, latest_signal_dbm, strongest_signal_dbm, freq_mhz, channel, security, seen_count, first_seen, last_seen = row
         vendor = vendor_lookup_mac(bssid)
         status, score, tags = classify_wifi(hidden, latest_signal_dbm, vendor, first_seen, baseline_id, bssid, baseline_wifi_set)
-        if score >= 6:
+        seen_this_session = _timestamp_at_or_after(last_seen, APP_STARTED_AT)
+        if score >= 6 and seen_this_session:
             high_risk_count += 1
-        if "new-baseline" in tags:
+        if "new-baseline" in tags and seen_this_session:
             new_baseline_count += 1
 
     for row in ble_rows:
         address, name, latest_rssi, strongest_rssi, vendor, seen_count, first_seen, last_seen = row
         status, score, tags = classify_ble(name, vendor, latest_rssi, first_seen, baseline_id, address, baseline_ble_set)
-        if score >= 6:
+        seen_this_session = _timestamp_at_or_after(last_seen, APP_STARTED_AT)
+        if score >= 6 and seen_this_session:
             high_risk_count += 1
-        if "new-baseline" in tags:
+        if "new-baseline" in tags and seen_this_session:
             new_baseline_count += 1
 
     return {
@@ -393,7 +403,6 @@ def _build_snapshot():
     scanning_enabled = recent_scan_age is None or recent_scan_age <= 60
 
     summary = _build_threat_summary()
-    usb_ip = _get_interface_ipv4("usb1") or _get_interface_ipv4("usb0")
     lan_ip = _get_interface_ipv4("wlan0")
     return {
         "local_time": local_now.strftime("%H:%M:%S"),
@@ -412,7 +421,6 @@ def _build_snapshot():
         "cpu_percent": _cpu_usage_percent(),
         "ram_percent": _memory_usage_percent(),
         "disk_percent": _disk_usage_percent("/"),
-        "usb_ip": usb_ip,
         "lan_ip": lan_ip,
         "last_wifi_scan": _format_since(last_wifi_scan_ts),
         "last_ble_scan": _format_since(last_ble_scan_ts),
