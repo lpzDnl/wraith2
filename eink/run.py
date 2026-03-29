@@ -27,6 +27,7 @@ BOOT_SCREEN_SECONDS = 2
 READY_SCREEN_SECONDS = 2
 ROTATE_SECONDS = 12
 APP_STARTED_MONOTONIC = time.monotonic()
+HEARTBEAT_PATH = "/tmp/wraith-eink-heartbeat"
 GPS_BY_ID_GLOB = "/dev/serial/by-id/*"
 GPS_TTY_GLOB = "/dev/ttyACM*"
 GPS_READ_TIMEOUT_SECONDS = 1.0
@@ -74,6 +75,15 @@ def _format_since(timestamp):
     if elapsed is None:
         return "never"
     return f"{_format_elapsed_compact(elapsed)} ago"
+
+
+def _write_heartbeat():
+    timestamp = datetime.now(timezone.utc).isoformat()
+    tmp_path = f"{HEARTBEAT_PATH}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as handle:
+        handle.write(timestamp)
+        handle.write("\n")
+    os.replace(tmp_path, HEARTBEAT_PATH)
 
 
 def _cpu_usage_percent():
@@ -402,12 +412,14 @@ def main():
         snapshot = _build_snapshot()
         LOGGER.info("rendering boot screen")
         display.render(boot_screen(display.size, snapshot))
+        _write_heartbeat()
         LOGGER.info("boot screen rendered")
         time.sleep(BOOT_SCREEN_SECONDS)
 
         snapshot = _build_snapshot()
         LOGGER.info("rendering ready screen")
         display.render(ready_screen(display.size, snapshot))
+        _write_heartbeat()
         LOGGER.info("ready screen rendered")
         time.sleep(READY_SCREEN_SECONDS)
 
@@ -417,6 +429,7 @@ def main():
             screens = rotating_screens(display.size, snapshot)
             LOGGER.info("rendering rotating screen %s", (screen_index % len(screens)) + 1)
             display.render(screens[screen_index % len(screens)])
+            _write_heartbeat()
             LOGGER.info("rotating screen %s rendered", (screen_index % len(screens)) + 1)
             screen_index += 1
             time.sleep(ROTATE_SECONDS)
