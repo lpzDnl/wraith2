@@ -64,6 +64,10 @@ def _format_metric(value, suffix=""):
     return f"{value}{suffix}"
 
 
+def _format_ip_line(label, value):
+    return f"{label} {value or '--'}"
+
+
 def _draw_footer(draw, snapshot, size):
     width, height = size
     margin = 8
@@ -134,6 +138,8 @@ def rotating_screens(size, snapshot):
         f"Time {snapshot.get('local_time', '--:--:--')}",
         f"Date {snapshot.get('local_date', '---- -- --')}",
         f"Up   {snapshot.get('uptime', '0s')}",
+        _format_ip_line("USB", snapshot.get("usb_ip")),
+        _format_ip_line("LAN", snapshot.get("lan_ip")),
     ]
     left_y = y
     for line in left_lines:

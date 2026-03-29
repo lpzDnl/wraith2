@@ -1,6 +1,7 @@
 import logging
 import os
 import shutil
+import subprocess
 import time
 from datetime import datetime, timezone
 from glob import glob
@@ -120,6 +121,30 @@ def _disk_usage_percent(path="/"):
     if usage.total <= 0:
         return None
     return round((usage.used / usage.total) * 100.0, 1)
+
+
+def _get_interface_ipv4(interface):
+    try:
+        result = subprocess.run(
+            ["ip", "-4", "-o", "addr", "show", interface],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except (FileNotFoundError, OSError):
+        return None
+
+    if result.returncode != 0:
+        return None
+
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if "inet" not in fields:
+            continue
+        inet_index = fields.index("inet")
+        if inet_index + 1 < len(fields):
+            return fields[inet_index + 1].split("/", 1)[0]
+    return None
 
 
 def _build_threat_summary():
@@ -368,6 +393,8 @@ def _build_snapshot():
     scanning_enabled = recent_scan_age is None or recent_scan_age <= 60
 
     summary = _build_threat_summary()
+    usb_ip = _get_interface_ipv4("usb1") or _get_interface_ipv4("usb0")
+    lan_ip = _get_interface_ipv4("wlan0")
     return {
         "local_time": local_now.strftime("%H:%M:%S"),
         "local_date": local_now.strftime("%Y-%m-%d"),
@@ -385,6 +412,8 @@ def _build_snapshot():
         "cpu_percent": _cpu_usage_percent(),
         "ram_percent": _memory_usage_percent(),
         "disk_percent": _disk_usage_percent("/"),
+        "usb_ip": usb_ip,
+        "lan_ip": lan_ip,
         "last_wifi_scan": _format_since(last_wifi_scan_ts),
         "last_ble_scan": _format_since(last_ble_scan_ts),
         "wifi_devices": summary["wifi_devices"],
