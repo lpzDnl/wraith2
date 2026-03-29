@@ -5,7 +5,7 @@ import subprocess
 import threading
 import time
 from glob import glob
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flask import Flask, jsonify, redirect, render_template, request, url_for
 
@@ -89,6 +89,18 @@ APP_STARTED_MONOTONIC = time.monotonic()
 
 def _utcnow():
     return datetime.utcnow().isoformat()
+
+
+def _seconds_since(timestamp):
+    if not timestamp:
+        return None
+    try:
+        parsed = datetime.fromisoformat(timestamp)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return max((datetime.now(timezone.utc) - parsed.astimezone(timezone.utc)).total_seconds(), 0.0)
 
 
 def _format_gps_date(date_value: str):

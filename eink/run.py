@@ -2,7 +2,7 @@ import logging
 import os
 import shutil
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from glob import glob
 
 from core.db import (
@@ -38,6 +38,18 @@ def _configure_logging():
         level=logging.INFO,
         format="%(asctime)s EINK: %(message)s",
     )
+
+
+def _parse_timestamp(timestamp):
+    if not timestamp:
+        return None
+    try:
+        parsed = datetime.fromisoformat(timestamp)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed
 
 
 def _seconds_since(timestamp):
