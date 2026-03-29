@@ -1,154 +1,60 @@
-🛰️ Wraith RF Detector
+# Wraith RF Detector
 
-Passive RF detection + threat classification + local UI + e-ink situational display
-Built for real-world reconnaissance, not dashboards that just look cool.
+Passive Wi-Fi/BLE collection with local classification, SQLite-backed history, a local Web UI, and a Waveshare 2.13" e-ink status display.
 
-🔥 Overview
+## Current Architecture
 
-Wraith is a lightweight RF detection platform designed to:
+Wraith currently has two main runtime paths:
 
-passively scan Wi-Fi and BLE environments
-identify new, anomalous, or high-risk devices
-correlate observations with GPS location
-present data through:
-a local web UI
-a low-power e-ink display
+- `ui/app.py` runs the collection backend and Web UI. It starts the runtime controller, GPS reader, and scan loop threads, logs Wi-Fi/BLE observations into SQLite, applies baseline/risk classification, and serves the operator UI.
+- `eink/run.py` is a separate display process. It reads the current DB state plus live host/GPS state and renders the e-ink pages independently of the Web UI.
 
-This system is optimized for field deployment on Raspberry Pi-class hardware.
+Data is persisted in `logs/data.db`. Baselines and observation history survive restarts. The e-ink display is a consumer of that state, not the source of collection.
 
-⚙️ Core Features
-RF Collection
-Continuous Wi-Fi + BLE scanning
-Signal strength tracking
-Device fingerprinting (vendor lookup + behavior)
-Threat Classification
-Baseline comparison (known vs unknown devices)
-Risk scoring engine
-Flags:
-high risk
-new baseline
-anomalous behavior
-GPS Integration
-Latitude / Longitude display
-GPS lock detection
-Timestamp correlation
-(Live-only fields)
-altitude (not persisted)
-speed (not persisted)
-satellites seen (runtime only)
-E-Ink Display (2.13” Waveshare V4)
-3 rotating production screens:
-System
-Collection
-Threat
-Ultra low power, always-on situational awareness
-Web UI
-Local dashboard (Flask)
-Live scan visibility
-Control panel:
-start/stop scanning
-turbo mode
-system shutdown
-🧠 System Architecture
-[ Wi-Fi / BLE Scanners ]
-            │
-            ▼
-        [ Core DB ]
-            │
- ┌──────────┴──────────┐
- ▼                     ▼
-Web UI             E-Ink Renderer
-(Flask)            (systemd service)
-Backend handles collection + classification
-UI and E-Ink are read-only consumers
-GPS is injected at observation time
-🖥️ E-Ink Display Layout
-Screen 1 — System
-Time / Date
-Uptime
-CPU / RAM / Disk usage
-(Planned: usage bars)
-Screen 2 — Collection
-Scan state
-Turbo mode
-Wi-Fi / BLE counts
-Last scan timestamps
-Screen 3 — Threat
-High-risk count
-New devices detected
-GPS lock status
-Satellites seen
-Lat / Lon
-Alt / Speed (live only)
-🚀 Installation
-Requirements
-Raspberry Pi (Zero 2 W / Pi 5 tested)
-Waveshare 2.13” e-ink HAT V4
-Python 3.10+
-Setup
-git clone https://github.com/yourusername/rf-detector.git
-cd rf-detector
+## E-Ink Behavior
 
-python3 -m venv venv
-source venv/bin/activate
+Current startup and rotation behavior:
 
-pip install -r requirements.txt
-▶️ Running
-Start Web UI
-python ui/app.py
+1. Large `WRAITH` splash page
+2. Boot page
+3. Ready page
+4. Rotating `System`, `Collection`, and `Threat` pages
 
-Access:
+Current page details:
 
-http://<device-ip>:5000
-Start E-Ink Display
-sudo systemctl start wraith-eink
+- Boot page: `E-ink booting` and `Starting display daemon`
+- Ready page: uptime, scanning state, GPS lock state, and the current preferred IP on the next line
+- Rotating pages: time appears in the upper-right header; date is shown under the time on the rotating pages
+- System page: current IP, `Up`, and CPU/RAM/disk utilization bars
+- Collection page: scan/turbo state, Wi-Fi/BLE counts, last scan ages, `New`, and `High`
+- Threat page: high/new counts, GPS state, satellites, and last known lat/lon with live alt/speed when available
 
-Restart after updates:
+Counter behavior on the e-ink rotating pages is session-scoped:
 
-sudo systemctl restart wraith-eink
-🧪 Testing the Display (Hardware Sanity Check)
-cd ~/e-Paper/RaspberryPi_JetsonNano/python/examples
-export GPIOZERO_PIN_FACTORY=lgpio
-python3 epd_2in13_V4_test.py
+- `WiFi`, `BLE`, `New`, and `High` reset when the e-ink process restarts
+- persisted observations, baselines, and history in SQLite do not reset on restart
 
-If this fails, your problem is hardware—not your code.
+## Web UI
 
-🧬 Data Model Notes
-Wi-Fi and BLE observations are stored in SQLite
-GPS fields stored per observation:
-gps_lat
-gps_lon
-gps_fix_timestamp
-Not Stored (by design)
-altitude
-speed
-satellites seen
+The current deployment serves the Web UI with `gunicorn` on port `5000`.
 
-These are runtime-only values used for display.
+- Access is via the active interface IP: LAN (`wlan0`) or USB (`usb0`/`usb1`)
+- The UI is reachable at `http://<active-ip>:5000`
+- Current operator workflow favors USB/direct access for the UI; Wi-Fi is mainly used for SSH and management
 
-⚠️ Known Limitations
-GPS altitude/speed not yet integrated from source
-Satellite count requires direct GPS parser integration
-E-Ink layout constrained by resolution (UI must stay minimal)
-No remote access security layer (local network only)
-🔐 Security Notes
-Designed for passive monitoring
-Does not transmit RF signals
-Web UI is local only (no auth layer yet)
-🧱 Future Work
- GPS satellite count integration
- graphical bars for system metrics
- threat severity visualization
- remote access hardening
- alerting (Telegram / MQTT)
-🧑‍💻 Developer Notes
-Restart wraith-eink after any display change
-Do not assume live reload (it doesn’t exist)
-Keep e-ink rendering minimal and fast
-Avoid unnecessary redraws (hardware limitation)
-📜 License
-TBD
-💀 Final Note
+`ui/app.py` still includes a direct Flask entry point for local/manual runs, but the working deployment path is gunicorn on `:5000`.
 
-Wraith is not a dashboard.
-It’s becoming a portable RF intelligence tool.
+## Operations
+
+- SQLite initialization is handled in the backend and e-ink processes
+- A DB cleanup timer exists in the deployed system
+- The e-ink service is managed by systemd
+- The backend/Web UI service is also managed by systemd in deployment
+- The e-ink runner writes a heartbeat file used by `watchdog-eink.sh` for recovery
+
+## Hardware / Runtime Notes
+
+- Wi-Fi scans default to `wlan1`
+- Web UI network URLs are derived from `wlan0` and `usb0`/`usb1`
+- GPS fixes are stored per observation when available
+- Live-only GPS fields used by the display include satellite count, altitude, and speed
