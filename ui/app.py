@@ -103,6 +103,47 @@ def _seconds_since(timestamp):
     return max((datetime.now(timezone.utc) - parsed.astimezone(timezone.utc)).total_seconds(), 0.0)
 
 
+def _get_interface_ipv4(interface):
+    try:
+        result = subprocess.run(
+            ["ip", "-4", "-o", "addr", "show", interface],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except (FileNotFoundError, OSError):
+        return None
+
+    if result.returncode != 0:
+        return None
+
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if "inet" not in fields:
+            continue
+        inet_index = fields.index("inet")
+        if inet_index + 1 < len(fields):
+            return fields[inet_index + 1].split("/", 1)[0]
+    return None
+
+
+def _webui_network_snapshot():
+    usb_ip = _get_interface_ipv4("usb1") or _get_interface_ipv4("usb0")
+    lan_ip = _get_interface_ipv4("wlan0")
+    webui_urls = {}
+
+    if usb_ip:
+        webui_urls["usb"] = f"http://{usb_ip}:5000"
+    if lan_ip:
+        webui_urls["lan"] = f"http://{lan_ip}:5000"
+
+    return {
+        "usb_ip": usb_ip,
+        "lan_ip": lan_ip,
+        "webui_urls": webui_urls,
+    }
+
+
 def _format_gps_date(date_value: str):
     if not date_value or len(date_value) < 6:
         return None
@@ -215,7 +256,8 @@ def _runtime_snapshot():
             gps_device=snapshot.get("gps_device"),
             gps_error=snapshot.get("gps_error"),
         )
-        return snapshot
+    snapshot.update(_webui_network_snapshot())
+    return snapshot
 
 
 def _render_prepare_response():
@@ -895,6 +937,9 @@ def index():
     processed_ble.sort(key=lambda x: (x["score"], x["latest"] if x["latest"] is not None else -999), reverse=True)
     processed_ble = [item for item in processed_ble if _matches_filter(item, active_filter)]
 
+    visible_high_risk_count = sum(1 for item in processed_wifi if item["score"] >= 6)
+    visible_high_risk_count += sum(1 for item in processed_ble if item["score"] >= 6)
+
     baseline_info = {"name": baseline_name, "time": baseline_time}
     summary = {
         "wifi_devices": len(processed_wifi),
@@ -905,6 +950,7 @@ def index():
         "ble_devices": len(processed_ble),
         "new_ble_count": new_ble_count,
         "new_ble_baseline_count": new_ble_baseline_count,
+        "visible_high_risk_count": visible_high_risk_count,
     }
     recent_wifi = []
     for row in recent_wifi_rows:

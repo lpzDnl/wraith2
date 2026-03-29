@@ -18,6 +18,7 @@ TITLE_FONT = _load_font(16)
 BODY_FONT = _load_font(11)
 FOOTER_FONT = _load_font(11)
 TIME_FONT = _load_font(9)
+SPLASH_TAGLINE_FONT = _load_font(10)
 
 
 def _footer(snapshot):
@@ -44,7 +45,7 @@ def _header_time(snapshot):
     return local_time[:5] if len(local_time) >= 5 else local_time
 
 
-def _draw_header(draw, title, snapshot, size):
+def _draw_header(draw, title, snapshot, size, show_date=False, right_block_y_offset=0):
     width, _ = size
     margin = 8
     y = margin
@@ -53,7 +54,12 @@ def _draw_header(draw, title, snapshot, size):
 
     local_time = _header_time(snapshot)
     time_width, _ = _measure_text(draw, local_time, TIME_FONT)
-    draw.text((width - margin - time_width, y + 2), local_time, font=TIME_FONT, fill=0)
+    time_y = y + 2 + right_block_y_offset
+    draw.text((width - margin - time_width, time_y), local_time, font=TIME_FONT, fill=0)
+    if show_date:
+        local_date = snapshot.get("local_date", "---- -- --")
+        date_width, _ = _measure_text(draw, local_date, TIME_FONT)
+        draw.text((width - margin - date_width, time_y + 9), local_date, font=TIME_FONT, fill=0)
 
     y += 18
     draw.line((margin, y, width - margin, y), fill=0, width=1)
@@ -116,12 +122,49 @@ def _draw_bar(draw, x, y, width, height, value):
         draw.rectangle((x + 1, y + 1, x + 1 + fill_width, y + height - 1), fill=0)
 
 
+def startup_splash_screen(size, snapshot):
+    image = _new_image(size)
+    draw = ImageDraw.Draw(image)
+    width, height = size
+    margin = 8
+
+    banner = "WRAITH"
+    tagline_lines = [
+        "Wireless Reconnaissance and",
+        "Intrusion Threat Hunter",
+    ]
+
+    splash_title_font = BODY_FONT
+    for font_size in (60, 56, 52, 48, 44, 40):
+        candidate = _load_font(font_size)
+        candidate_width, _ = _measure_text(draw, banner, candidate)
+        if candidate_width <= width - (margin * 2):
+            splash_title_font = candidate
+            break
+
+    banner_width, banner_height = _measure_text(draw, banner, splash_title_font)
+    tagline_metrics = [_measure_text(draw, line, SPLASH_TAGLINE_FONT) for line in tagline_lines]
+    tagline_height = sum(height for _, height in tagline_metrics) + 4
+
+    total_height = banner_height + 10 + tagline_height
+    banner_x = max((width - banner_width) // 2, 0)
+    banner_y = max((height - total_height) // 2 - 4, margin)
+    tagline_y = banner_y + banner_height + 10
+
+    draw.text((banner_x, banner_y), banner, font=splash_title_font, fill=0)
+    current_tagline_y = tagline_y
+    for line, (line_width, line_height) in zip(tagline_lines, tagline_metrics):
+        line_x = max((width - line_width) // 2, 0)
+        draw.text((line_x, current_tagline_y), line, font=SPLASH_TAGLINE_FONT, fill=0)
+        current_tagline_y += line_height + 4
+    return image
+
+
 def boot_screen(size, snapshot):
     return _draw_screen(
         "WRAITH",
         [
             "E-ink booting",
-            f"Date {snapshot.get('local_date', '---- -- --')}",
             "Starting display daemon",
         ],
         snapshot,
@@ -138,6 +181,7 @@ def ready_screen(size, snapshot):
             f"Uptime {snapshot.get('uptime', '0s')}",
             f"Scanning {scanning}",
             f"GPS {gps}",
+            _format_ip_line("IP", snapshot.get("preferred_ip")),
         ],
         snapshot,
         size,
@@ -150,12 +194,11 @@ def rotating_screens(size, snapshot):
 
     system_screen = _new_image(size)
     draw = ImageDraw.Draw(system_screen)
-    y = _draw_header(draw, "System", snapshot, size) + 2
+    y = _draw_header(draw, "System", snapshot, size, show_date=True, right_block_y_offset=-4) + 2
 
     left_lines = [
-        f"Date {snapshot.get('local_date', '---- -- --')}",
+        _format_ip_line("IP", snapshot.get("preferred_ip")),
         f"Up   {snapshot.get('uptime', '0s')}",
-        _format_ip_line("IP", snapshot.get("lan_ip")),
     ]
     left_y = y
     for line in left_lines:
@@ -177,7 +220,7 @@ def rotating_screens(size, snapshot):
 
     collection_screen = _new_image(size)
     draw = ImageDraw.Draw(collection_screen)
-    y = _draw_header(draw, "Collection", snapshot, size) + 2
+    y = _draw_header(draw, "Collection", snapshot, size, show_date=True, right_block_y_offset=-4) + 2
 
     left_lines = [
         f"Scan {'on' if snapshot.get('scanning_enabled') else 'off'}",
@@ -207,10 +250,7 @@ def rotating_screens(size, snapshot):
     threat_screen = _new_image(size)
     draw = ImageDraw.Draw(threat_screen)
     y = margin
-    _draw_header(draw, "Threat", snapshot, size)
-    time_width, _ = _measure_text(draw, _header_time(snapshot), TIME_FONT)
-    gps_x1 = width - margin - time_width - 6
-    draw.ellipse((gps_x1 - 10, margin + 2, gps_x1, margin + 12), outline=0, fill=0 if snapshot.get("gps_lock") else 255, width=1)
+    _draw_header(draw, "Threat", snapshot, size, show_date=True, right_block_y_offset=-4)
     y = margin + 25
 
     severity_blocks = min(max(int(snapshot.get("high_risk_count", 0)), 0), 3)

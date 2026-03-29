@@ -20,7 +20,7 @@ from core.gps_state import derive_gps_state, seconds_since
 from core.risk import classify_ble, classify_wifi
 from core.vendors import vendor_lookup_mac
 from eink.display import EInkDisplay
-from eink.screens import boot_screen, ready_screen, rotating_screens
+from eink.screens import boot_screen, ready_screen, rotating_screens, startup_splash_screen
 
 
 LOGGER = logging.getLogger("wraith-eink")
@@ -166,11 +166,16 @@ def _build_threat_summary():
     high_risk_count = 0
     new_baseline_count = 0
 
+    wifi_device_count = 0
+    ble_device_count = 0
+
     for row in wifi_rows:
         bssid, ssid, hidden, latest_signal_dbm, strongest_signal_dbm, freq_mhz, channel, security, seen_count, first_seen, last_seen = row
         vendor = vendor_lookup_mac(bssid)
         status, score, tags = classify_wifi(hidden, latest_signal_dbm, vendor, first_seen, baseline_id, bssid, baseline_wifi_set)
         seen_this_session = _timestamp_at_or_after(last_seen, APP_STARTED_AT)
+        if seen_this_session:
+            wifi_device_count += 1
         if score >= 6 and seen_this_session:
             high_risk_count += 1
         if "new-baseline" in tags and seen_this_session:
@@ -180,14 +185,16 @@ def _build_threat_summary():
         address, name, latest_rssi, strongest_rssi, vendor, seen_count, first_seen, last_seen = row
         status, score, tags = classify_ble(name, vendor, latest_rssi, first_seen, baseline_id, address, baseline_ble_set)
         seen_this_session = _timestamp_at_or_after(last_seen, APP_STARTED_AT)
+        if seen_this_session:
+            ble_device_count += 1
         if score >= 6 and seen_this_session:
             high_risk_count += 1
         if "new-baseline" in tags and seen_this_session:
             new_baseline_count += 1
 
     return {
-        "wifi_devices": len(wifi_rows),
-        "ble_devices": len(ble_rows),
+        "wifi_devices": wifi_device_count,
+        "ble_devices": ble_device_count,
         "new_baseline_count": new_baseline_count,
         "high_risk_count": high_risk_count,
     }
@@ -404,6 +411,8 @@ def _build_snapshot():
 
     summary = _build_threat_summary()
     lan_ip = _get_interface_ipv4("wlan0")
+    usb_ip = _get_interface_ipv4("usb1") or _get_interface_ipv4("usb0")
+    preferred_ip = lan_ip or usb_ip or "--"
     return {
         "local_time": local_now.strftime("%H:%M:%S"),
         "local_date": local_now.strftime("%Y-%m-%d"),
@@ -422,6 +431,8 @@ def _build_snapshot():
         "ram_percent": _memory_usage_percent(),
         "disk_percent": _disk_usage_percent("/"),
         "lan_ip": lan_ip,
+        "usb_ip": usb_ip,
+        "preferred_ip": preferred_ip,
         "last_wifi_scan": _format_since(last_wifi_scan_ts),
         "last_ble_scan": _format_since(last_ble_scan_ts),
         "wifi_devices": summary["wifi_devices"],
@@ -446,6 +457,13 @@ def main():
         return 1
 
     try:
+        snapshot = _build_snapshot()
+        LOGGER.info("rendering startup splash screen")
+        display.render(startup_splash_screen(display.size, snapshot))
+        _write_heartbeat()
+        LOGGER.info("startup splash screen rendered")
+        time.sleep(BOOT_SCREEN_SECONDS)
+
         snapshot = _build_snapshot()
         LOGGER.info("rendering boot screen")
         display.render(boot_screen(display.size, snapshot))

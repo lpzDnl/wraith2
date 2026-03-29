@@ -1,273 +1,1140 @@
-<html>
+<!doctype html>
+<html lang="en">
 <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Wraith RF Detector</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 16px; }
-        table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
-        th, td { border: 1px solid #999; padding: 6px; font-size: 14px; }
-        th { background: #eee; }
-        .high { background: #ffdddd; }
-        .medium { background: #fff2cc; }
-        .ok { background: #e7f4e4; }
-        .mono { font-family: monospace; }
-        .summary { margin-bottom: 16px; padding: 10px; border: 1px solid #999; }
-        a.button {
-            display: inline-block;
-            padding: 8px 12px;
-            border: 1px solid #444;
-            text-decoration: none;
-            color: black;
-            margin-right: 8px;
+        :root {
+            color-scheme: dark;
+            --bg: #0d1117;
+            --panel: #141a22;
+            --panel-strong: #1a2230;
+            --panel-soft: #10161e;
+            --border: #273244;
+            --border-strong: #324158;
+            --text: #e8edf4;
+            --muted: #9aa8bb;
+            --accent: #78a6ff;
+            --good: #3fbf7f;
+            --warn: #d5a54a;
+            --danger: #d96262;
+            --shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+            background:
+                radial-gradient(circle at top, rgba(120, 166, 255, 0.08), transparent 34rem),
+                linear-gradient(180deg, #0a0f15 0%, var(--bg) 36%, #0a0f15 100%);
+            color: var(--text);
+            line-height: 1.45;
+        }
+
+        a {
+            color: inherit;
+        }
+
+        .app-shell {
+            width: min(1200px, calc(100vw - 24px));
+            margin: 0 auto;
+            padding: 12px 0 32px;
+        }
+
+        .top-strip {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 10px 12px;
+            margin-bottom: 12px;
+            background: linear-gradient(180deg, rgba(18, 25, 35, 0.94), rgba(13, 18, 26, 0.96));
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            box-shadow: var(--shadow);
+        }
+
+        .strip-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
+            flex-wrap: wrap;
+        }
+
+        .product-mark {
+            display: inline-flex;
+            align-items: center;
+            padding-right: 10px;
+            margin-right: 2px;
+            border-right: 1px solid rgba(255, 255, 255, 0.08);
+            font-size: 0.82rem;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: #d7e0ec;
+        }
+
+        .clock-panel {
+            display: flex;
+            align-items: baseline;
+            justify-content: flex-end;
+            gap: 8px;
+            min-width: max-content;
+            text-align: right;
+        }
+
+        .clock-label {
+            font-size: 0.72rem;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+        }
+
+        .clock-value {
+            font-size: 1rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            color: #f4f7fb;
+        }
+
+        .hero {
+            display: grid;
+            gap: 12px;
             margin-bottom: 12px;
         }
-        a.button.active {
-            background: #222;
-            color: white;
+
+        .hero-card,
+        .section-card {
+            background: linear-gradient(180deg, rgba(26, 34, 48, 0.9), rgba(16, 22, 30, 0.96));
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            box-shadow: var(--shadow);
         }
-        .filters {
+
+        .hero-card {
+            padding: 14px;
+        }
+
+        .eyebrow {
+            margin: 0 0 6px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+
+        h1, h2, h3, p {
+            margin: 0;
+        }
+
+        h1 {
+            font-size: clamp(1.2rem, 4vw, 1.8rem);
+            line-height: 1.08;
+            letter-spacing: -0.04em;
+        }
+
+        .hero-copy {
+            color: var(--muted);
+            margin-top: 6px;
+            max-width: 56ch;
+            font-size: 0.92rem;
+        }
+
+        .top-metrics,
+        .summary-grid,
+        .system-grid,
+        .activity-grid,
+        .device-grid,
+        .runtime-grid {
+            display: grid;
+            gap: 12px;
+        }
+
+        .top-metrics,
+        .summary-grid,
+        .runtime-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .metric {
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            background: rgba(15, 22, 31, 0.72);
+        }
+
+        .metric-label,
+        .stat-label,
+        .kv-label {
+            color: var(--muted);
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .metric-value,
+        .stat-value {
+            margin-top: 4px;
+            font-size: 1.18rem;
+            font-weight: 700;
+            letter-spacing: -0.03em;
+        }
+
+        .metric-note,
+        .stat-note,
+        .item-note {
+            margin-top: 3px;
+            color: var(--muted);
+            font-size: 0.8rem;
+        }
+
+        .status-chip,
+        .tag,
+        .pill,
+        .signal-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            min-height: 24px;
+            padding: 3px 8px;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.03);
+            font-size: 0.74rem;
+            white-space: nowrap;
+        }
+
+        .status-chip {
+            font-weight: 700;
+        }
+
+        .status-good {
+            border-color: rgba(63, 191, 127, 0.38);
+            color: #b8f0cf;
+        }
+
+        .status-warn {
+            border-color: rgba(213, 165, 74, 0.38);
+            color: #f0d9a5;
+        }
+
+        .status-danger {
+            border-color: rgba(217, 98, 98, 0.38);
+            color: #ffc1c1;
+        }
+
+        .section-card {
+            padding: 14px;
+            margin-top: 12px;
+        }
+
+        .section-header {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
             margin-bottom: 12px;
         }
-        .runtime {
-            margin-bottom: 16px;
-            padding: 10px;
-            border: 1px solid #999;
-            background: #f8f8f8;
+
+        .section-title-row {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
         }
-        .runtime-actions form {
-            display: inline-block;
-            margin-right: 8px;
-            margin-bottom: 8px;
+
+        .section-subtitle {
+            color: var(--muted);
+            font-size: 0.86rem;
         }
+
+        .toolbar,
+        .filter-bar,
+        .tag-row,
+        .status-row,
+        .activity-tags,
+        .link-row,
+        .strip-left {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .button,
         button.button {
-            display: inline-block;
+            appearance: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 36px;
             padding: 8px 12px;
-            border: 1px solid #444;
+            border-radius: 10px;
+            border: 1px solid var(--border-strong);
+            background: #1a2432;
+            color: var(--text);
             text-decoration: none;
-            color: black;
-            background: white;
-            margin-right: 8px;
-            margin-bottom: 12px;
+            font-weight: 600;
+            font-size: 0.86rem;
             cursor: pointer;
+            transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
         }
-        button.button.danger {
-            border-color: #800;
-            color: #800;
+
+        .button:hover,
+        button.button:hover {
+            border-color: #50627d;
+            background: #202c3d;
+        }
+
+        .button.active {
+            background: rgba(120, 166, 255, 0.16);
+            border-color: rgba(120, 166, 255, 0.45);
+            color: #d6e5ff;
+        }
+
+        .button.secondary {
+            background: transparent;
+        }
+
+        .button.danger {
+            border-color: rgba(217, 98, 98, 0.5);
+            color: #ffd1d1;
+        }
+
+        .button[disabled] {
+            cursor: not-allowed;
+            opacity: 0.45;
+        }
+
+        .runtime-panel {
+            display: grid;
+            gap: 10px;
+        }
+
+        .runtime-head {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .runtime-message {
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            background: rgba(7, 11, 16, 0.35);
+            font-size: 0.9rem;
+        }
+
+        .runtime-grid .metric-value {
+            font-size: 0.94rem;
+            font-weight: 600;
+            letter-spacing: 0;
+        }
+
+        .kv-list {
+            display: grid;
+            gap: 6px;
+        }
+
+        .kv-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 7px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .kv-row:last-child {
+            border-bottom: 0;
+            padding-bottom: 0;
+        }
+
+        .kv-value {
+            text-align: right;
+            word-break: break-word;
+        }
+
+        .summary-grid,
+        .system-grid,
+        .activity-grid,
+        .device-grid {
+            margin-top: 10px;
+        }
+
+        .summary-stat,
+        .activity-panel,
+        .system-panel,
+        .device-card {
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            background: rgba(10, 15, 21, 0.68);
+        }
+
+        .summary-stat {
+            min-height: 88px;
+        }
+
+        .threat-layout {
+            display: grid;
+            gap: 14px;
+        }
+
+        .device-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .device-card {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .device-card::before {
+            content: "";
+            position: absolute;
+            inset: 0 auto 0 0;
+            width: 4px;
+            background: #41526b;
+        }
+
+        .device-card.score-high::before {
+            background: var(--danger);
+        }
+
+        .device-card.score-medium::before {
+            background: var(--warn);
+        }
+
+        .device-card.score-low::before {
+            background: var(--good);
+        }
+
+        .device-head {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .device-title {
+            font-size: 0.96rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            word-break: break-word;
+        }
+
+        .device-subtitle {
+            margin-top: 3px;
+            color: var(--muted);
+            font-size: 0.82rem;
+            word-break: break-word;
+        }
+
+        .device-fields {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px 12px;
+        }
+
+        .device-field {
+            min-width: 0;
+        }
+
+        .mono {
+            font-family: "SFMono-Regular", "Consolas", monospace;
+        }
+
+        .empty-state {
+            padding: 14px;
+            border: 1px dashed var(--border-strong);
+            border-radius: 16px;
+            color: var(--muted);
+            text-align: center;
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .activity-list {
+            display: grid;
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        .activity-item {
+            padding: 8px 10px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: rgba(10, 15, 21, 0.6);
+        }
+
+        .activity-head {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .activity-title {
+            font-weight: 700;
+            word-break: break-word;
+            font-size: 0.87rem;
+            line-height: 1.2;
+        }
+
+        .activity-meta {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr);
+            gap: 4px;
+            margin-top: 4px;
+        }
+
+        .activity-id {
+            color: var(--muted);
+            font-size: 0.75rem;
+        }
+
+        .activity-tags {
+            gap: 4px;
+        }
+
+        .activity-tags .pill {
+            min-height: 20px;
+            padding: 2px 7px;
+            font-size: 0.7rem;
+        }
+
+        .activity-foot {
+            margin-top: 4px;
+            color: var(--muted);
+            font-size: 0.73rem;
+            line-height: 1.25;
+        }
+
+        .footer-note {
+            margin-top: 16px;
+            color: var(--muted);
+            font-size: 0.88rem;
+            text-align: center;
+        }
+
+        @media (min-width: 720px) {
+            .hero {
+                grid-template-columns: 1.2fr 0.8fr;
+                align-items: stretch;
+            }
+
+            .section-header {
+                flex-direction: row;
+                align-items: flex-start;
+                justify-content: space-between;
+            }
+
+            .summary-grid {
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+            }
+
+            .system-grid,
+            .activity-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .device-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (min-width: 960px) {
+            .top-metrics {
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+            }
+
+            .runtime-grid {
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+            }
         }
     </style>
 </head>
 <body>
-    <h1>Wraith RF Detector</h1>
-    <div class="runtime">
-        <div><b>Mode:</b> <span id="runtime-mode">{{ runtime_state.mode }}</span></div>
-        <div><b>Message:</b> <span id="runtime-message">{{ runtime_state.operator_message }}</span></div>
-        <div><b>GPS Device:</b> <span id="runtime-gps-device">{{ runtime_state.gps_device }}</span></div>
-        <div><b>GPS Connected:</b> <span id="runtime-gps-connected">{{ "yes" if runtime_state.gps_connected else "no" }}</span></div>
-        <div><b>Scanning:</b> <span id="runtime-scanning-enabled">{{ "enabled" if runtime_state.scanning_enabled else "disabled" }}</span></div>
-        <div><b>Turbo:</b> <span id="runtime-turbo-enabled">{{ "on" if runtime_state.turbo_enabled else "off" }}</span></div>
-        <div><b>Wi-Fi Interval:</b> <span id="runtime-wifi-interval">{{ runtime_state.wifi_scan_interval_sec }}</span>s</div>
-        <div><b>BLE Interval:</b> <span id="runtime-ble-interval">{{ runtime_state.ble_scan_interval_sec }}</span>s</div>
-        <div><b>Last Wi-Fi Scan:</b> <span id="runtime-last-wifi-scan">{{ runtime_state.last_wifi_scan_ts or "" }}</span></div>
-        <div><b>Last BLE Scan:</b> <span id="runtime-last-ble-scan">{{ runtime_state.last_ble_scan_ts or "" }}</span></div>
-        <div><b>Wi-Fi Scan Running:</b> <span id="runtime-wifi-running">{{ "yes" if runtime_state.wifi_scan_running else "no" }}</span></div>
-        <div><b>BLE Scan Running:</b> <span id="runtime-ble-running">{{ "yes" if runtime_state.ble_scan_running else "no" }}</span></div>
-        <div><b>Scan Loop Error:</b> <span id="runtime-scan-loop-error">{{ runtime_state.scan_loop_error or "" }}</span></div>
-        <div class="runtime-actions">
-            <form method="post" action="{{ url_for('start_scanning', filter=active_filter) }}">
-                <button class="button" type="submit">Start Scanning</button>
-            </form>
-            <form method="post" action="{{ url_for('stop_scanning', filter=active_filter) }}">
-                <button class="button" type="submit">Stop Scanning</button>
-            </form>
-            <form method="post" action="{{ url_for('toggle_turbo', filter=active_filter) }}">
-                <button class="button" type="submit">Turbo {{ "OFF" if runtime_state.turbo_enabled else "ON" }}</button>
-            </form>
-            <form method="post" action="{{ url_for('shutdown', filter=active_filter) }}">
-                <button class="button danger" type="submit">Shutdown</button>
-            </form>
-        </div>
+    <div class="app-shell">
+        <section class="top-strip">
+            <div class="strip-left">
+                <div class="product-mark">Wraith</div>
+                <span class="status-chip status-good" id="top-mode-chip">{{ runtime_state.mode }}</span>
+                <span class="status-chip {% if runtime_state.scanning_enabled %}status-good{% else %}status-warn{% endif %}" id="runtime-scanning-chip">{{ "Scanning" if runtime_state.scanning_enabled else "Paused" }}</span>
+                <span class="status-chip {% if runtime_state.turbo_enabled %}status-warn{% else %}status-good{% endif %}" id="runtime-turbo-chip">Turbo {{ "On" if runtime_state.turbo_enabled else "Off" }}</span>
+            </div>
+            <div class="clock-panel">
+                <div class="clock-label">Local Time</div>
+                <div class="clock-value mono" id="top-clock">--:--:--</div>
+            </div>
+        </section>
+
+        <section class="hero">
+            <div class="hero-card">
+                <p class="eyebrow">Operational Console</p>
+                <h1>Wraith RF Detector</h1>
+                <p class="hero-copy">Live Wi-Fi and BLE monitoring with clearer runtime state, lower visual noise, and faster scanning of what matters.</p>
+                <div class="top-metrics">
+                    <div class="metric">
+                        <div class="metric-label">High Risk</div>
+                        <div class="metric-value">{{ summary.visible_high_risk_count }}</div>
+                        <div class="metric-note">Visible under current filter</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">Wi-Fi Devices</div>
+                        <div class="metric-value">{{ summary.wifi_devices }}</div>
+                        <div class="metric-note">Hidden {{ summary.hidden_count }} | 5 GHz {{ summary.five_count }}</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">BLE Devices</div>
+                        <div class="metric-value">{{ summary.ble_devices }}</div>
+                        <div class="metric-note">New {{ summary.new_ble_count }} | Baseline delta {{ summary.new_ble_baseline_count }}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="hero-card runtime-panel">
+                <div class="runtime-head">
+                    <div class="section-title-row">
+                        <div>
+                            <p class="eyebrow">Overall Status / Runtime</p>
+                            <h2>Runtime Control</h2>
+                        </div>
+                        <div class="status-row">
+                            <span class="status-chip status-good" id="runtime-mode-chip">{{ runtime_state.mode }}</span>
+                            <span class="status-chip {% if runtime_state.gps_connected %}status-good{% else %}status-warn{% endif %}" id="runtime-gps-chip">{{ "GPS Connected" if runtime_state.gps_connected else "GPS Waiting" }}</span>
+                        </div>
+                    </div>
+                    <div class="runtime-message">
+                        <div class="kv-label">Operator Message</div>
+                        <div id="runtime-message">{{ runtime_state.operator_message }}</div>
+                    </div>
+                </div>
+
+                <div class="runtime-grid">
+                    <div class="metric">
+                        <div class="metric-label">GPS</div>
+                        <div class="metric-value" id="runtime-gps-connected">{{ "Connected" if runtime_state.gps_connected else "Waiting" }}</div>
+                        <div class="metric-note mono" id="runtime-gps-device">{{ runtime_state.gps_device or "No active device" }}</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">Wi-Fi Interval</div>
+                        <div class="metric-value"><span id="runtime-wifi-interval">{{ runtime_state.wifi_scan_interval_sec }}</span>s</div>
+                        <div class="metric-note" id="runtime-last-wifi-scan">{{ runtime_state.last_wifi_scan_ts or "No Wi-Fi scan yet" }}</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">BLE Interval</div>
+                        <div class="metric-value"><span id="runtime-ble-interval">{{ runtime_state.ble_scan_interval_sec }}</span>s</div>
+                        <div class="metric-note" id="runtime-last-ble-scan">{{ runtime_state.last_ble_scan_ts or "No BLE scan yet" }}</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">Scan Loop</div>
+                        <div class="metric-value" id="runtime-scan-loop-state">{{ "Degraded" if runtime_state.scan_loop_error else "Healthy" }}</div>
+                        <div class="metric-note" id="runtime-scan-loop-error">{{ runtime_state.scan_loop_error or "No errors reported" }}</div>
+                    </div>
+                </div>
+
+                <div class="toolbar">
+                    <form method="post" action="{{ url_for('start_scanning', filter=active_filter) }}">
+                        <button class="button" type="submit">Start Scanning</button>
+                    </form>
+                    <form method="post" action="{{ url_for('stop_scanning', filter=active_filter) }}">
+                        <button class="button secondary" type="submit">Stop Scanning</button>
+                    </form>
+                    <form method="post" action="{{ url_for('toggle_turbo', filter=active_filter) }}">
+                        <button class="button" type="submit" id="runtime-turbo-button">Turbo {{ "Off" if runtime_state.turbo_enabled else "On" }}</button>
+                    </form>
+                    <form method="post" action="{{ url_for('prepare_mobile', filter=active_filter) }}">
+                        <button class="button secondary" type="submit" id="prepare-mobile-button" {% if "prepare_mobile" not in runtime_state.allowed_actions %}disabled{% endif %}>Prepare Mobile</button>
+                    </form>
+                    <form method="post" action="{{ url_for('start_return', filter=active_filter) }}">
+                        <button class="button secondary" type="submit" id="start-return-button" {% if "start_return" not in runtime_state.allowed_actions %}disabled{% endif %}>Return To Web</button>
+                    </form>
+                    <form method="post" action="{{ url_for('shutdown', filter=active_filter) }}">
+                        <button class="button danger" type="submit">Shutdown</button>
+                    </form>
+                </div>
+            </div>
+        </section>
+
+        <section class="section-card">
+            <div class="section-header">
+                <div>
+                    <p class="eyebrow">Threats</p>
+                    <h2>Detected Devices</h2>
+                    <p class="section-subtitle">Risk-sorted Wi-Fi and BLE results, reshaped into readable cards instead of dense tables.</p>
+                </div>
+                <div class="filter-bar">
+                    <a class="button{% if active_filter == 'all' %} active{% endif %}" href="{{ url_for('index', filter='all') }}">All</a>
+                    <a class="button{% if active_filter == 'high' %} active{% endif %}" href="{{ url_for('index', filter='high') }}">High Risk</a>
+                    <a class="button{% if active_filter == 'new' %} active{% endif %}" href="{{ url_for('index', filter='new') }}">New Devices</a>
+                    <a class="button{% if active_filter == 'approaching' %} active{% endif %}" href="{{ url_for('index', filter='approaching') }}">Approaching</a>
+                </div>
+            </div>
+
+            <div class="threat-layout">
+                <div>
+                    <div class="section-title-row">
+                        <div>
+                            <h3>Wi-Fi</h3>
+                            <p class="section-subtitle">{{ processed_wifi|length }} visible networks</p>
+                        </div>
+                    </div>
+                    {% if processed_wifi %}
+                    <div class="device-grid">
+                        {% for item in processed_wifi %}
+                        <article class="device-card {% if item.score >= 6 %}score-high{% elif item.score >= 3 %}score-medium{% else %}score-low{% endif %}">
+                            <div class="device-head">
+                                <div>
+                                    <div class="device-title">{{ item.ssid or "Hidden SSID" }}</div>
+                                    <div class="device-subtitle mono">{{ item.bssid }}</div>
+                                </div>
+                                <div class="status-row">
+                                    <span class="status-chip {% if item.score >= 6 %}status-danger{% elif item.score >= 3 %}status-warn{% else %}status-good{% endif %}">{{ item.status }}</span>
+                                    <span class="signal-pill">{% if item.latest is not none %}{{ item.latest }} dBm{% else %}Signal ?{% endif %}</span>
+                                </div>
+                                <div class="tag-row">
+                                    {% if item.tags and item.tags != "-" %}
+                                        {% for tag in item.tags.split(",") %}
+                                        <span class="tag">{{ tag.strip() }}</span>
+                                        {% endfor %}
+                                    {% else %}
+                                        <span class="tag">No tags</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="device-fields">
+                                <div class="device-field">
+                                    <div class="kv-label">Vendor</div>
+                                    <div>{{ item.vendor or "Unknown" }}</div>
+                                </div>
+                                <div class="device-field">
+                                    <div class="kv-label">Security</div>
+                                    <div>{{ item.security or "Unknown" }}</div>
+                                </div>
+                                <div class="device-field">
+                                    <div class="kv-label">Band</div>
+                                    <div>{{ item.band }}</div>
+                                </div>
+                                <div class="device-field">
+                                    <div class="kv-label">Channel / Freq</div>
+                                    <div>{{ item.chan_or_freq }}</div>
+                                </div>
+                                <div class="device-field">
+                                    <div class="kv-label">Strongest</div>
+                                    <div>{% if item.strongest is not none %}{{ item.strongest }} dBm{% else %}-{% endif %}</div>
+                                </div>
+                                <div class="device-field">
+                                    <div class="kv-label">Seen</div>
+                                    <div>{{ item.seen_count }}</div>
+                                </div>
+                                <div class="device-field">
+                                    <div class="kv-label">First Seen</div>
+                                    <div>{{ item.first_seen }}</div>
+                                </div>
+                                <div class="device-field">
+                                    <div class="kv-label">Last Seen</div>
+                                    <div>{{ item.last_seen }}</div>
+                                </div>
+                                <div class="device-field">
+                                    <div class="kv-label">Hidden</div>
+                                    <div>{{ item.hidden }}</div>
+                                </div>
+                            </div>
+                        </article>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="empty-state">No Wi-Fi devices match the current filter.</div>
+                    {% endif %}
+                </div>
+
+                <div>
+                    <div class="section-title-row">
+                        <div>
+                            <h3>Bluetooth Low Energy</h3>
+                            <p class="section-subtitle">{{ processed_ble|length }} visible devices</p>
+                        </div>
+                    </div>
+                    {% if processed_ble %}
+                    <div class="device-grid">
+                        {% for item in processed_ble %}
+                        <article class="device-card {% if item.score >= 6 %}score-high{% elif item.score >= 3 %}score-medium{% else %}score-low{% endif %}">
+                            <div class="device-head">
+                                <div>
+                                    <div class="device-title">{{ item.name or "Unnamed BLE Device" }}</div>
+                                    <div class="device-subtitle mono">{{ item.address }}</div>
+                                </div>
+                                <div class="status-row">
+                                    <span class="status-chip {% if item.score >= 6 %}status-danger{% elif item.score >= 3 %}status-warn{% else %}status-good{% endif %}">{{ item.status }}</span>
+                                    <span class="signal-pill">{% if item.latest is not none %}{{ item.latest }} RSSI{% else %}RSSI ?{% endif %}</span>
+                                </div>
+                                <div class="tag-row">
+                                    {% if item.tags and item.tags != "-" %}
+                                        {% for tag in item.tags.split(",") %}
+                                        <span class="tag">{{ tag.strip() }}</span>
+                                        {% endfor %}
+                                    {% else %}
+                                        <span class="tag">No tags</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="device-fields">
+                                <div class="device-field">
+                                    <div class="kv-label">Vendor</div>
+                                    <div>{{ item.vendor or "Unknown" }}</div>
+                                </div>
+                                <div class="device-field">
+                                    <div class="kv-label">Strongest</div>
+                                    <div>{% if item.strongest is not none %}{{ item.strongest }} RSSI{% else %}-{% endif %}</div>
+                                </div>
+                                <div class="device-field">
+                                    <div class="kv-label">Seen</div>
+                                    <div>{{ item.seen_count }}</div>
+                                </div>
+                                <div class="device-field">
+                                    <div class="kv-label">First Seen</div>
+                                    <div>{{ item.first_seen }}</div>
+                                </div>
+                                <div class="device-field">
+                                    <div class="kv-label">Last Seen</div>
+                                    <div>{{ item.last_seen }}</div>
+                                </div>
+                            </div>
+                        </article>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="empty-state">No BLE devices match the current filter.</div>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
+
+        <section class="section-card">
+            <div class="section-header">
+                <div>
+                    <p class="eyebrow">Collection</p>
+                    <h2>Baseline And Intake</h2>
+                    <p class="section-subtitle">Capture state, track new devices, and review what changed relative to the current baseline.</p>
+                </div>
+                <a class="button" href="{{ url_for('capture_baseline', filter=active_filter) }}">Capture Baseline</a>
+            </div>
+
+            <div class="summary-grid">
+                <div class="summary-stat">
+                    <div class="stat-label">Baseline</div>
+                    <div class="stat-value">{{ baseline.name }}</div>
+                    <div class="stat-note">{{ baseline.time }}</div>
+                </div>
+                <div class="summary-stat">
+                    <div class="stat-label">New Wi-Fi</div>
+                    <div class="stat-value">{{ summary.new_wifi_count }}</div>
+                    <div class="stat-note">Baseline delta {{ summary.new_wifi_baseline_count }}</div>
+                </div>
+                <div class="summary-stat">
+                    <div class="stat-label">New BLE</div>
+                    <div class="stat-value">{{ summary.new_ble_count }}</div>
+                    <div class="stat-note">Baseline delta {{ summary.new_ble_baseline_count }}</div>
+                </div>
+                <div class="summary-stat">
+                    <div class="stat-label">Visible Total</div>
+                    <div class="stat-value">{{ summary.wifi_devices + summary.ble_devices }}</div>
+                    <div class="stat-note">Filter: {{ active_filter }}</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="section-card">
+            <div class="section-header">
+                <div>
+                    <p class="eyebrow">System</p>
+                    <h2>Runtime Environment</h2>
+                    <p class="section-subtitle">Connection state, active interfaces, and scanner process health.</p>
+                </div>
+            </div>
+
+            <div class="system-grid">
+                <div class="system-panel">
+                    <h3>Connections</h3>
+                    <div class="kv-list">
+                        <div class="kv-row">
+                            <div class="kv-label">GPS Connected</div>
+                            <div class="kv-value" id="runtime-gps-state-detail">{{ "yes" if runtime_state.gps_connected else "no" }}</div>
+                        </div>
+                        <div class="kv-row">
+                            <div class="kv-label">GPS Device</div>
+                            <div class="kv-value mono" id="runtime-gps-device-detail">{{ runtime_state.gps_device or "Unavailable" }}</div>
+                        </div>
+                        <div class="kv-row">
+                            <div class="kv-label">USB Web UI</div>
+                            <div class="kv-value mono">{{ runtime_state.webui_urls.usb or "Unavailable" }}</div>
+                        </div>
+                        <div class="kv-row">
+                            <div class="kv-label">LAN Web UI</div>
+                            <div class="kv-value mono">{{ runtime_state.webui_urls.lan or "Unavailable" }}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="system-panel">
+                    <h3>Scanner State</h3>
+                    <div class="kv-list">
+                        <div class="kv-row">
+                            <div class="kv-label">Wi-Fi Running</div>
+                            <div class="kv-value" id="runtime-wifi-running">{{ "yes" if runtime_state.wifi_scan_running else "no" }}</div>
+                        </div>
+                        <div class="kv-row">
+                            <div class="kv-label">BLE Running</div>
+                            <div class="kv-value" id="runtime-ble-running">{{ "yes" if runtime_state.ble_scan_running else "no" }}</div>
+                        </div>
+                        <div class="kv-row">
+                            <div class="kv-label">Scanning Enabled</div>
+                            <div class="kv-value" id="runtime-scanning-enabled">{{ "enabled" if runtime_state.scanning_enabled else "disabled" }}</div>
+                        </div>
+                        <div class="kv-row">
+                            <div class="kv-label">Turbo</div>
+                            <div class="kv-value" id="runtime-turbo-enabled">{{ "on" if runtime_state.turbo_enabled else "off" }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="section-card">
+            <div class="section-header">
+                <div>
+                    <p class="eyebrow">Recent Activity</p>
+                    <h2>Latest Observations</h2>
+                    <p class="section-subtitle">Most recent Wi-Fi and BLE logs with GPS context preserved.</p>
+                </div>
+            </div>
+
+            <div class="activity-grid">
+                <div class="activity-panel">
+                    <div class="section-title-row">
+                        <div>
+                            <h3>Recent Wi-Fi Observations</h3>
+                            <p class="section-subtitle">{{ recent_wifi|length }} entries</p>
+                        </div>
+                    </div>
+                    {% if recent_wifi %}
+                    <div class="activity-list">
+                        {% for item in recent_wifi %}
+                        <article class="activity-item">
+                            <div class="activity-head">
+                                <div class="activity-title">{{ item.ssid or "Hidden SSID" }}</div>
+                                <span class="pill">{% if item.signal_dbm is not none %}{{ item.signal_dbm }} dBm{% else %}Signal ?{% endif %}</span>
+                            </div>
+                            <div class="activity-meta">
+                                <div class="activity-id mono">{{ item.bssid }}</div>
+                                <div class="activity-tags">
+                                    <span class="pill mono">{{ item.ts }}</span>
+                                    {% if item.gps_fix_timestamp %}
+                                    <span class="pill mono">{{ item.gps_fix_timestamp }}</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="activity-foot">
+                                <span class="pill">{% if item.gps_lat is not none and item.gps_lon is not none %}{{ item.gps_lat }}, {{ item.gps_lon }}{% else %}No GPS coords{% endif %}</span>
+                                {% if item.gps_date or item.gps_time %}
+                                | {{ item.gps_date or "-" }} {{ item.gps_time or "-" }}
+                                {% endif %}
+                            </div>
+                        </article>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="empty-state">No recent Wi-Fi observations.</div>
+                    {% endif %}
+                </div>
+
+                <div class="activity-panel">
+                    <div class="section-title-row">
+                        <div>
+                            <h3>Recent BLE Observations</h3>
+                            <p class="section-subtitle">{{ recent_ble|length }} entries</p>
+                        </div>
+                    </div>
+                    {% if recent_ble %}
+                    <div class="activity-list">
+                        {% for item in recent_ble %}
+                        <article class="activity-item">
+                            <div class="activity-head">
+                                <div class="activity-title">{{ item.name or "Unnamed BLE Device" }}</div>
+                                <span class="pill">{% if item.rssi is not none %}{{ item.rssi }} RSSI{% else %}RSSI ?{% endif %}</span>
+                            </div>
+                            <div class="activity-meta">
+                                <div class="activity-id mono">{{ item.address }}</div>
+                                <div class="activity-tags">
+                                    <span class="pill mono">{{ item.ts }}</span>
+                                    {% if item.gps_fix_timestamp %}
+                                    <span class="pill mono">{{ item.gps_fix_timestamp }}</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="activity-foot">
+                                <span class="pill">{% if item.gps_lat is not none and item.gps_lon is not none %}{{ item.gps_lat }}, {{ item.gps_lon }}{% else %}No GPS coords{% endif %}</span>
+                                {% if item.gps_date or item.gps_time %}
+                                | {{ item.gps_date or "-" }} {{ item.gps_time or "-" }}
+                                {% endif %}
+                            </div>
+                        </article>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="empty-state">No recent BLE observations.</div>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
+
+        <div class="footer-note">Data and routes are unchanged. This view only restructures presentation and trims frontend polling work.</div>
     </div>
 
-    <a class="button" href="{{ url_for('capture_baseline', filter=active_filter) }}">Capture Baseline</a>
-
-    <div class="filters">
-        <a class="button{% if active_filter == 'all' %} active{% endif %}" href="{{ url_for('index', filter='all') }}">All</a>
-        <a class="button{% if active_filter == 'high' %} active{% endif %}" href="{{ url_for('index', filter='high') }}">High Risk</a>
-        <a class="button{% if active_filter == 'new' %} active{% endif %}" href="{{ url_for('index', filter='new') }}">New Devices</a>
-        <a class="button{% if active_filter == 'approaching' %} active{% endif %}" href="{{ url_for('index', filter='approaching') }}">Approaching</a>
-    </div>
-
-    <div class="summary">
-        <b>Baseline:</b> {{ baseline.name }} &nbsp;
-        <b>Created:</b> {{ baseline.time }}
-    </div>
-
-    <div class="summary">
-        <b>Wi-Fi devices:</b> {{ summary.wifi_devices }} &nbsp;
-        <b>Hidden:</b> {{ summary.hidden_count }} &nbsp;
-        <b>5 GHz:</b> {{ summary.five_count }} &nbsp;
-        <b>New Wi-Fi:</b> {{ summary.new_wifi_count }} &nbsp;
-        <b>New vs baseline:</b> {{ summary.new_wifi_baseline_count }} &nbsp;&nbsp;
-        <b>BLE devices:</b> {{ summary.ble_devices }} &nbsp;
-        <b>New BLE:</b> {{ summary.new_ble_count }} &nbsp;
-        <b>New BLE vs baseline:</b> {{ summary.new_ble_baseline_count }}
-    </div>
-
-    <h2>Wi-Fi</h2>
-    <table>
-        <tr>
-            <th>Status</th>
-            <th>Tags</th>
-            <th>BSSID</th>
-            <th>SSID</th>
-            <th>Vendor</th>
-            <th>Hidden</th>
-            <th>Latest dBm</th>
-            <th>Strongest dBm</th>
-            <th>Band</th>
-            <th>Channel/Freq</th>
-            <th>Security</th>
-            <th>Seen</th>
-            <th>First Seen</th>
-            <th>Last Seen</th>
-        </tr>
-        {% for item in processed_wifi %}
-        <tr class="{% if item.score >= 6 %}high{% elif item.score >= 3 %}medium{% else %}ok{% endif %}">
-            <td>{{ item.status }}</td>
-            <td>{{ item.tags }}</td>
-            <td class="mono">{{ item.bssid }}</td>
-            <td>{{ item.ssid }}</td>
-            <td>{{ item.vendor }}</td>
-            <td>{{ item.hidden }}</td>
-            <td>{{ item.latest }}</td>
-            <td>{{ item.strongest }}</td>
-            <td>{{ item.band }}</td>
-            <td>{{ item.chan_or_freq }}</td>
-            <td>{{ item.security }}</td>
-            <td>{{ item.seen_count }}</td>
-            <td>{{ item.first_seen }}</td>
-            <td>{{ item.last_seen }}</td>
-        </tr>
-        {% endfor %}
-    </table>
-
-    <h2>Bluetooth Low Energy</h2>
-    <table>
-        <tr>
-            <th>Status</th>
-            <th>Tags</th>
-            <th>Address</th>
-            <th>Name</th>
-            <th>Vendor</th>
-            <th>Latest RSSI</th>
-            <th>Strongest RSSI</th>
-            <th>Seen</th>
-            <th>First Seen</th>
-            <th>Last Seen</th>
-        </tr>
-        {% for item in processed_ble %}
-        <tr class="{% if item.score >= 6 %}high{% elif item.score >= 3 %}medium{% else %}ok{% endif %}">
-            <td>{{ item.status }}</td>
-            <td>{{ item.tags }}</td>
-            <td class="mono">{{ item.address }}</td>
-            <td>{{ item.name }}</td>
-            <td>{{ item.vendor }}</td>
-            <td>{{ item.latest }}</td>
-            <td>{{ item.strongest }}</td>
-            <td>{{ item.seen_count }}</td>
-            <td>{{ item.first_seen }}</td>
-            <td>{{ item.last_seen }}</td>
-        </tr>
-        {% endfor %}
-    </table>
-
-    <h2>Recent Wi-Fi Observations</h2>
-    <table>
-        <tr>
-            <th>ts</th>
-            <th>bssid</th>
-            <th>ssid</th>
-            <th>signal_dbm</th>
-            <th>gps_lat</th>
-            <th>gps_lon</th>
-            <th>gps_fix_timestamp</th>
-            <th>gps_date</th>
-            <th>gps_time</th>
-        </tr>
-        {% for item in recent_wifi %}
-        <tr>
-            <td class="mono">{{ item.ts }}</td>
-            <td class="mono">{{ item.bssid }}</td>
-            <td>{{ item.ssid or "" }}</td>
-            <td>{{ item.signal_dbm if item.signal_dbm is not none else "" }}</td>
-            <td>{{ item.gps_lat if item.gps_lat is not none else "" }}</td>
-            <td>{{ item.gps_lon if item.gps_lon is not none else "" }}</td>
-            <td class="mono">{{ item.gps_fix_timestamp or "" }}</td>
-            <td>{{ item.gps_date or "" }}</td>
-            <td>{{ item.gps_time or "" }}</td>
-        </tr>
-        {% endfor %}
-    </table>
-
-    <h2>Recent BLE Observations</h2>
-    <table>
-        <tr>
-            <th>ts</th>
-            <th>address</th>
-            <th>name</th>
-            <th>rssi</th>
-            <th>gps_lat</th>
-            <th>gps_lon</th>
-            <th>gps_fix_timestamp</th>
-            <th>gps_date</th>
-            <th>gps_time</th>
-        </tr>
-        {% for item in recent_ble %}
-        <tr>
-            <td class="mono">{{ item.ts }}</td>
-            <td class="mono">{{ item.address }}</td>
-            <td>{{ item.name or "" }}</td>
-            <td>{{ item.rssi if item.rssi is not none else "" }}</td>
-            <td>{{ item.gps_lat if item.gps_lat is not none else "" }}</td>
-            <td>{{ item.gps_lon if item.gps_lon is not none else "" }}</td>
-            <td class="mono">{{ item.gps_fix_timestamp or "" }}</td>
-            <td>{{ item.gps_date or "" }}</td>
-            <td>{{ item.gps_time or "" }}</td>
-        </tr>
-        {% endfor %}
-    </table>
     <script>
         const transitionModes = new Set({{ transition_modes|tojson }});
+        const runtimeFields = {
+            topModeChip: document.getElementById("top-mode-chip"),
+            runtimeModeChip: document.getElementById("runtime-mode-chip"),
+            message: document.getElementById("runtime-message"),
+            gpsConnected: document.getElementById("runtime-gps-connected"),
+            gpsDevice: document.getElementById("runtime-gps-device"),
+            gpsChip: document.getElementById("runtime-gps-chip"),
+            gpsStateDetail: document.getElementById("runtime-gps-state-detail"),
+            gpsDeviceDetail: document.getElementById("runtime-gps-device-detail"),
+            scanningEnabled: document.getElementById("runtime-scanning-enabled"),
+            scanningChip: document.getElementById("runtime-scanning-chip"),
+            turboEnabled: document.getElementById("runtime-turbo-enabled"),
+            turboChip: document.getElementById("runtime-turbo-chip"),
+            turboButton: document.getElementById("runtime-turbo-button"),
+            wifiInterval: document.getElementById("runtime-wifi-interval"),
+            bleInterval: document.getElementById("runtime-ble-interval"),
+            lastWifiScan: document.getElementById("runtime-last-wifi-scan"),
+            lastBleScan: document.getElementById("runtime-last-ble-scan"),
+            wifiRunning: document.getElementById("runtime-wifi-running"),
+            bleRunning: document.getElementById("runtime-ble-running"),
+            scanLoopState: document.getElementById("runtime-scan-loop-state"),
+            scanLoopError: document.getElementById("runtime-scan-loop-error"),
+            prepareButton: document.getElementById("prepare-mobile-button"),
+            returnButton: document.getElementById("start-return-button")
+        };
+
+        let latestMode = {{ runtime_state.mode|tojson }};
+
+        function applyModeChip(node, mode) {
+            if (!node) {
+                return;
+            }
+            const lowerMode = String(mode || "").toLowerCase();
+            let level = "status-good";
+            if (lowerMode.includes("error")) {
+                level = "status-danger";
+            } else if (transitionModes.has(mode) || lowerMode.includes("waiting") || lowerMode.includes("pending")) {
+                level = "status-warn";
+            }
+            setChip(node, mode || "Unknown", level);
+        }
+
+        function setText(node, value) {
+            if (node && node.textContent !== value) {
+                node.textContent = value;
+            }
+        }
+
+        function setDisabled(node, disabled) {
+            if (!node) {
+                return;
+            }
+            node.disabled = disabled;
+        }
+
+        function setChip(node, text, level) {
+            if (!node) {
+                return;
+            }
+            setText(node, text);
+            node.classList.remove("status-good", "status-warn", "status-danger");
+            node.classList.add(level);
+        }
+
+        function applyRuntimeState(state) {
+            latestMode = state.mode;
+            applyModeChip(runtimeFields.topModeChip, state.mode);
+            applyModeChip(runtimeFields.runtimeModeChip, state.mode);
+            setText(runtimeFields.message, state.operator_message || "");
+            setText(runtimeFields.gpsConnected, state.gps_connected ? "Connected" : "Waiting");
+            setText(runtimeFields.gpsDevice, state.gps_device || "No active device");
+            setChip(
+                runtimeFields.gpsChip,
+                state.gps_connected ? "GPS Connected" : "GPS Waiting",
+                state.gps_connected ? "status-good" : "status-warn"
+            );
+            setText(runtimeFields.gpsStateDetail, state.gps_connected ? "yes" : "no");
+            setText(runtimeFields.gpsDeviceDetail, state.gps_device || "Unavailable");
+            setText(runtimeFields.scanningEnabled, state.scanning_enabled ? "enabled" : "disabled");
+            setChip(
+                runtimeFields.scanningChip,
+                state.scanning_enabled ? "Scanning" : "Paused",
+                state.scanning_enabled ? "status-good" : "status-warn"
+            );
+            setText(runtimeFields.turboEnabled, state.turbo_enabled ? "on" : "off");
+            setChip(
+                runtimeFields.turboChip,
+                `Turbo ${state.turbo_enabled ? "On" : "Off"}`,
+                state.turbo_enabled ? "status-warn" : "status-good"
+            );
+            setText(runtimeFields.turboButton, `Turbo ${state.turbo_enabled ? "Off" : "On"}`);
+            setText(runtimeFields.wifiInterval, String(state.wifi_scan_interval_sec ?? ""));
+            setText(runtimeFields.bleInterval, String(state.ble_scan_interval_sec ?? ""));
+            setText(runtimeFields.lastWifiScan, state.last_wifi_scan_ts || "No Wi-Fi scan yet");
+            setText(runtimeFields.lastBleScan, state.last_ble_scan_ts || "No BLE scan yet");
+            setText(runtimeFields.wifiRunning, state.wifi_scan_running ? "yes" : "no");
+            setText(runtimeFields.bleRunning, state.ble_scan_running ? "yes" : "no");
+            setText(runtimeFields.scanLoopState, state.scan_loop_error ? "Degraded" : "Healthy");
+            setText(runtimeFields.scanLoopError, state.scan_loop_error || "No errors reported");
+            setDisabled(runtimeFields.prepareButton, !(state.allowed_actions || []).includes("prepare_mobile"));
+            setDisabled(runtimeFields.returnButton, !(state.allowed_actions || []).includes("start_return"));
+        }
 
         async function pollStatus() {
             try {
-                const response = await fetch("{{ url_for('status') }}", {cache: "no-store"});
+                const response = await fetch("{{ url_for('status') }}", { cache: "no-store" });
                 if (!response.ok) {
-                    window.setTimeout(pollStatus, 2000);
+                    window.setTimeout(pollStatus, 2500);
                     return;
                 }
-                const state = await response.json();
-                document.getElementById("runtime-mode").textContent = state.mode;
-                document.getElementById("runtime-message").textContent = state.operator_message;
-                document.getElementById("runtime-gps-device").textContent = state.gps_device;
-                document.getElementById("runtime-gps-connected").textContent = state.gps_connected ? "yes" : "no";
-                document.getElementById("runtime-scanning-enabled").textContent = state.scanning_enabled ? "enabled" : "disabled";
-                document.getElementById("runtime-turbo-enabled").textContent = state.turbo_enabled ? "on" : "off";
-                document.getElementById("runtime-wifi-interval").textContent = state.wifi_scan_interval_sec;
-                document.getElementById("runtime-ble-interval").textContent = state.ble_scan_interval_sec;
-                document.getElementById("runtime-last-wifi-scan").textContent = state.last_wifi_scan_ts || "";
-                document.getElementById("runtime-last-ble-scan").textContent = state.last_ble_scan_ts || "";
-                document.getElementById("runtime-wifi-running").textContent = state.wifi_scan_running ? "yes" : "no";
-                document.getElementById("runtime-ble-running").textContent = state.ble_scan_running ? "yes" : "no";
-                document.getElementById("runtime-scan-loop-error").textContent = state.scan_loop_error || "";
-            } catch (err) {
-                window.setTimeout(pollStatus, 2000);
+                applyRuntimeState(await response.json());
+            } catch (_) {
+                window.setTimeout(pollStatus, 2500);
                 return;
             }
 
-            window.setTimeout(pollStatus, transitionModes.has(state.mode) ? 1000 : 2000);
+            const delay = document.hidden ? 4000 : (transitionModes.has(latestMode) ? 1000 : 2000);
+            window.setTimeout(pollStatus, delay);
         }
 
-        window.setTimeout(pollStatus, transitionModes.has({{ runtime_state.mode|tojson }}) ? 1000 : 2000);
+        function updateClock() {
+            const clock = document.getElementById("top-clock");
+            if (!clock) {
+                return;
+            }
+            const now = new Date();
+            clock.textContent = now.toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit"
+            });
+        }
+
+        updateClock();
+        window.setInterval(updateClock, 1000);
+        window.setTimeout(pollStatus, transitionModes.has(latestMode) ? 1000 : 2000);
     </script>
 </body>
 </html>
