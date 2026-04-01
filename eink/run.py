@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -34,6 +35,8 @@ GPS_BY_ID_GLOB = "/dev/serial/by-id/*"
 GPS_TTY_GLOB = "/dev/ttyACM*"
 GPS_READ_TIMEOUT_SECONDS = 1.0
 GPS_READ_POLL_SECONDS = 0.1
+UPS_SCRIPT_PATH = os.path.expanduser("~/UPS_HAT_C/UPS_HAT_C/INA219.py")
+UPS_BATTERY_CURRENT_THRESHOLD = -0.05
 
 
 def _configure_logging():
@@ -153,6 +156,67 @@ def _get_interface_ipv4(interface):
         if inet_index + 1 < len(fields):
             return fields[inet_index + 1].split("/", 1)[0]
     return None
+
+
+def _ups_fallback_snapshot():
+    return {
+        "battery_percent": None,
+        "battery_voltage": None,
+        "battery_current": None,
+        "battery_power": None,
+        "power_state": "--",
+    }
+
+
+def _run_ups_script():
+    if not os.path.isfile(UPS_SCRIPT_PATH):
+        return None
+    try:
+        return subprocess.run(
+            ["python3", UPS_SCRIPT_PATH],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def _parse_ups_metrics(output):
+    patterns = {
+        "battery_voltage": r"Load Voltage:\s*([-+]?\d+(?:\.\d+)?)\s*V",
+        "battery_current": r"Current:\s*([-+]?\d+(?:\.\d+)?)\s*A",
+        "battery_power": r"Power:\s*([-+]?\d+(?:\.\d+)?)\s*W",
+        "battery_percent": r"Percent:\s*([-+]?\d+(?:\.\d+)?)\s*%",
+    }
+    metrics = {}
+    for key, pattern in patterns.items():
+        match = re.search(pattern, output)
+        if not match:
+            return None
+        try:
+            metrics[key] = float(match.group(1))
+        except ValueError:
+            return None
+    return metrics
+
+
+def _get_ups_snapshot():
+    result = _run_ups_script()
+    if result is None or result.returncode != 0:
+        return _ups_fallback_snapshot()
+
+    metrics = _parse_ups_metrics(result.stdout)
+    if metrics is None:
+        return _ups_fallback_snapshot()
+
+    battery_current = metrics["battery_current"]
+    power_state = "Battery" if battery_current <= UPS_BATTERY_CURRENT_THRESHOLD else "Charging"
+    return {
+        **metrics,
+        "power_state": power_state,
+    }
 
 
 def _build_threat_summary():
@@ -410,6 +474,7 @@ def _build_snapshot():
     scanning_enabled = recent_scan_age is None or recent_scan_age <= 60
 
     summary = _build_threat_summary()
+    ups = _get_ups_snapshot()
     lan_ip = _get_interface_ipv4("wlan0")
     usb_ip = _get_interface_ipv4("usb1") or _get_interface_ipv4("usb0")
     preferred_ip = lan_ip or usb_ip or "--"
@@ -439,6 +504,7 @@ def _build_snapshot():
         "ble_devices": summary["ble_devices"],
         "new_baseline_count": summary["new_baseline_count"],
         "high_risk_count": summary["high_risk_count"],
+        **ups,
     }
 
 

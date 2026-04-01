@@ -98,6 +98,12 @@ def _format_ip_line(label, value):
     return f"{label} {value or '--'}"
 
 
+def _format_battery_percent(value):
+    if value is None:
+        return "Batt --"
+    return f"Batt {value:.1f}%"
+
+
 def _draw_footer(draw, snapshot, size):
     width, height = size
     margin = 8
@@ -199,6 +205,8 @@ def rotating_screens(size, snapshot):
     left_lines = [
         _format_ip_line("IP", snapshot.get("preferred_ip")),
         f"Up   {snapshot.get('uptime', '0s')}",
+        f"Power {snapshot.get('power_state', '--')}",
+        _format_battery_percent(snapshot.get("battery_percent")),
     ]
     left_y = y
     for line in left_lines:
