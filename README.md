@@ -58,3 +58,23 @@ The current deployment serves the Web UI with `gunicorn` on port `5000`.
 - Web UI network URLs are derived from `wlan0` and `usb0`/`usb1`
 - GPS fixes are stored per observation when available
 - Live-only GPS fields used by the display include satellite count, altitude, and speed
+
+## Dependency Maintenance
+
+On the Wraith runtime box, install or refresh the project venv dependencies with:
+
+```bash
+cd /home/wraith/rf-detector
+source venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+Re-run the `pip install -r requirements.txt` step any time `requirements.txt` changes to recover or refresh the runtime environment.
+
+Wraith uses the local Waveshare Python library path on the device:
+`/home/wraith/e-Paper/RaspberryPi_JetsonNano/python/lib`
+
+Do not `pip install` the full Waveshare e-Paper GitHub repository on Wraith. Install or refresh only the runtime packages in the venv with `pip install -r requirements.txt`.
+
+The tracked runtime dependencies are `gunicorn`, `Pillow`, `spidev`, `gpiozero`, and `lgpio`.

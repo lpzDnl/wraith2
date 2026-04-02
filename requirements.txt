@@ -1,0 +1,5 @@
+gunicorn
+Pillow
+spidev
+gpiozero
+lgpio
